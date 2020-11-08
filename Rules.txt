@@ -1,0 +1,5 @@
+Really no more than a variant of the Block game, the Draw Game is more popular in many parts of the world. 
+Players take less dominoes initially but a player who cannot place a domino must pick a sleeping domino to add to their set. 
+When the sleeping dominoes run out, players simply pass their turn when they cannot go. 
+For this variation, two players would start with 7 dominoes, three players with 5 tiles, 
+four players with 4 tiles and five players with 3 tiles.
