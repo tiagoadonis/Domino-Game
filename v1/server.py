@@ -8,10 +8,12 @@ import time
 import random
 
 # Points 
+'''
 pClient1 = 0
 pClient2 = 0
 pClient3 = 0
 pClient4 = 0
+'''
 
 # First Client
 fClient = None
