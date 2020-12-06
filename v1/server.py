@@ -36,6 +36,8 @@ stock = ['0-0', '0-1', '0-2', '0-3', '0-4', '0-5', '0-6',
         '5-5', '5-6',
         '6-6']        
 
+#Client info
+clients=[]
 
 def accept_incoming_connections():
     """Sets up handling for incoming clients"""
@@ -51,6 +53,7 @@ def accept_incoming_connections():
             client.send(bytes("Greetings from the server! Now type your name and press enter!", "utf8"))
             addresses[client] = client_address
             Thread(target=handle_client, args=(client,)).start()
+        
 
 
 def start_game():
@@ -72,6 +75,7 @@ def handle_client(client):  # Takes client socket as argument.
     broadcast(bytes(msg, "utf8"))
     clients[client] = name
     # If 2 <= players <= 4, then start game in 10 sec if no one shows up!
+    broadcastPlayers()
     if len(addresses) >= 2 and len(addresses) <= 5:
         len1 = len(addresses)
         msg = "If no one else appears in the next 20 seconds, the game will begin!"
@@ -79,6 +83,8 @@ def handle_client(client):  # Takes client socket as argument.
         time.sleep(20)
         if len(addresses) == len1:
             check_start = True
+    
+    
 
 
 def receive(client):
@@ -175,6 +181,13 @@ def clientRandom(last=None):
             if a != last:
                 b.append(a)
         return random.choice(b)
+
+def broadcastPlayers():
+    players_info = {}
+    for c in clients:
+        players_info[clients[c]] = addresses[c]
+    
+    broadcast(bytes(json.dumps(players_info),"UTF-8"))
 
 
 '''

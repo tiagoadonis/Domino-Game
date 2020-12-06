@@ -10,6 +10,7 @@ numPieces = 0
 stock = []
 nRound = 0
 points = 0
+my_name= ""
 
 
 def main():
@@ -18,17 +19,21 @@ def main():
         try:
             msg = receive()
             print(msg)
+
             if msg == "{quit}":
                 client_socket.close()
                 break
+            if msg == "{clients}":
+                save_clients()
             if msg == "{numPieces}":
                 num_pieces()
-            if msg == "{rcvStock}":
+            elif msg == "{rcvStock}":
                 rcv_stock()
-            if msg == "{dstrStock}":
+            elif msg == "{dstrStock}":
                 dstr_stock()
-            if msg == "{doneStock}":
+            elif msg == "{doneStock}":
                 print(stock)
+            
             '''
 			if msg == "{play}":
                 play_piece()
@@ -39,6 +44,17 @@ def main():
 			'''
         except OSError:  # Possibly client has left the chat.
             break
+
+def send_name():
+    print("Greetings from the server! Now type your name and press enter!")
+    name = input()
+    
+    if name == "{quit}":
+        client_socket.close()
+        sys.exit("Connection closed!")
+    my_name = name
+    send(name)
+    
 
 def num_pieces():
     global numPieces
@@ -146,10 +162,15 @@ client_socket.connect(ADDR)
 main_thread = Thread(target=main)
 main_thread.start()
 
+my_msg = ""
 while 1:
     my_msg = ""  # For the messages to be sent.
     my_msg = input()
     if my_msg == "{quit}":
-        break
+        client_socket.close()
+        sys.exit("Connection closed!")
+    if my_name == "":
+        my_name = my_msg
+
     send(my_msg)
     
