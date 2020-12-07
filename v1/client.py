@@ -17,21 +17,24 @@ def main():
     """Main function"""
     while True:
         try:
-            msg = receive()
-            print(msg)
+            #print(receive())
+            msg = json.loads(receive())
+            
+            if msg["type"] == "print":
+                print(msg["content"])
 
-            if msg == "{quit}":
+            if msg["type"] == "quit":
                 client_socket.close()
                 break
-            if msg == "{clients}":
+            if msg["type"] == "clients":
                 save_clients()
-            if msg == "{numPieces}":
-                num_pieces()
-            elif msg == "{rcvStock}":
-                rcv_stock()
-            elif msg == "{dstrStock}":
-                dstr_stock()
-            elif msg == "{doneStock}":
+            if msg["type"] == "numPieces":
+                num_pieces(msg["content"])
+            elif msg["type"] == "rcvStock":
+                rcv_stock(msg["content"])
+            elif msg["type"] == "dstrStock":
+                dstr_stock(msg["content"])
+            elif msg["type"] == "doneStock":
                 print(stock)
             
             '''
@@ -44,31 +47,22 @@ def main():
 			'''
         except OSError:  # Possibly client has left the chat.
             break
-
-def send_name():
-    print("Greetings from the server! Now type your name and press enter!")
-    name = input()
-    
-    if name == "{quit}":
-        client_socket.close()
-        sys.exit("Connection closed!")
-    my_name = name
-    send(name)
     
 
-def num_pieces():
+def num_pieces(content):
     global numPieces
-    numPieces = json.loads(receive())
-    print(numPieces)
+    numPieces = content
+    print("Number of pieces per player: "+str(numPieces))
 
-def dstr_stock():
+def dstr_stock(content):
     """Client Take / Not Take a piece from stock"""
-    stockS = json.loads(receive())	# Stock from server
+    stockS = content	# Stock from server
     arr = [1, 0, 0, 0, 0] # 20% probability of taking a piece
     prob = random.choice(arr)
     global stock
     global numPieces
-
+    while len(stockS) == 1:
+        stockS=stockS[0]
     if prob == 1 and len(stock) != numPieces:
         stock.append(stockS[0])
         stockS = stockS[1:]
@@ -87,16 +81,21 @@ def dstr_stock():
                     stockS.append(a)
             stock = b
             print("Swap a piece")
+
+    while len(stockS) == 1:
+        stockS=stockS[0]
     random.shuffle(stockS)
-    send(json.dumps(stockS))
+    send(str(stockS))
 
 
-def rcv_stock():
+def rcv_stock(content):
     """Client Shuffle and sends stock to Server"""
-    stk = json.loads(receive())
+    stk = content
     random.shuffle(stk)
+    while len(stk) == 1:
+            stk=stk[0]
     print(stk)
-    send(json.dumps(stk))
+    send(str(stk))
     print("Sent!")
 
 def receive():
@@ -166,11 +165,14 @@ my_msg = ""
 while 1:
     my_msg = ""  # For the messages to be sent.
     my_msg = input()
+    if my_name == "" and my_msg != "{quit}":
+        my_name = my_msg
+    
+    send(my_msg)
     if my_msg == "{quit}":
         client_socket.close()
         sys.exit("Connection closed!")
-    if my_name == "":
-        my_name = my_msg
+    
 
-    send(my_msg)
+    
     

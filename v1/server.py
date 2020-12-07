@@ -45,12 +45,20 @@ def accept_incoming_connections():
     while True:
         if len(addresses) == 5 :
             client, client_address = SERVER.accept()
-            client.send(bytes("{quit}", "utf8"))
+            msg= {
+                "type":"quit",
+                "content":""
+            }
+            client.send(bytes(json.dumps(msg), "utf8"))
             client.close()
         else:
             client, client_address = SERVER.accept()
             print("%s:%s has connected." % client_address)
-            client.send(bytes("Greetings from the server! Now type your name and press enter!", "utf8"))
+            msg= {
+                "type":"print",
+                "content":"Greetings from the server! Now type your name and press enter!"
+            }
+            client.send(bytes(json.dumps(msg), "utf8"))
             addresses[client] = client_address
             Thread(target=handle_client, args=(client,)).start()
         
@@ -70,16 +78,21 @@ def handle_client(client):  # Takes client socket as argument.
     global check_start
     name = receive(client)
     welcome = 'Welcome %s! If you ever want to quit, type {quit} to exit.' % name
-    client.send(bytes(welcome, "utf8"))
-    msg = "%s has joined the game!\n" % name
-    broadcast(bytes(msg, "utf8"))
+    msg= {
+        "type":"print",
+        "content":welcome
+    }
+    #client.send(bytes(welcome, "utf8"))
+    client.send(bytes(json.dumps(msg), "utf8"))
+    msg["content"] = "%s has joined the game!\n" % name
+    broadcast(bytes(json.dumps(msg), "utf8"))
     clients[client] = name
     # If 2 <= players <= 4, then start game in 10 sec if no one shows up!
     broadcastPlayers()
     if len(addresses) >= 2 and len(addresses) <= 5:
         len1 = len(addresses)
-        msg = "If no one else appears in the next 20 seconds, the game will begin!"
-        broadcast(bytes(msg, "utf8"))
+        msg["content"] = "If no one else appears in the next 20 seconds, the game will begin!"
+        broadcast(bytes(json.dumps(msg), "utf8"))
         time.sleep(20)
         if len(addresses) == len1:
             check_start = True
@@ -109,44 +122,64 @@ def broadcast(msg, prefix=""):  # prefix is for name identification.
 
 def game():
     """Main function of the Game"""
-    msg = "The Game is going to Start!"
-    broadcast(bytes(msg,"utf8"))
+    msg = {
+        "type":"print",
+        "content":""
+    }
+    msg["content"] = "The Game is going to Start!"
+    broadcast(bytes(json.dumps(msg),"utf8"))
     time.sleep(.05)
     send_numP()
     time.sleep(.05)
     send_stock()
-    msg = "Stock Shuffled!"
-    broadcast(bytes(msg,"utf8"))
+    msg["content"] = "Stock Shuffled!"
+    broadcast(bytes(json.dumps(msg),"utf8"))
     time.sleep(.05)
     distribute()
-    msg = "Stock Distributed!"
-    broadcast(bytes(msg,"utf8"))
+    print(stock)
+    msg["content"] = "Stock Distributed!"
+    broadcast(bytes(json.dumps(msg),"utf8"))
     time.sleep(.05)
-    msg = "{doneStock}"
-    broadcast(bytes(msg,"utf8"))
+    msg["type"] = "doneStock"
+    msg["content"] = ""
+    broadcast(bytes(json.dumps(msg),"utf8"))
     time.sleep(.05)
     #play()
 
 
 def send_numP():
-    msg = "{numPieces}"
-    broadcast(bytes(msg,"utf8"))
+    
+    #msg = "{numPieces}"
+    #broadcast(bytes(msg,"utf8"))
 
     for sock in clients:
-        sock.send(bytes(json.dumps(num_pieces[str(len(addresses))]), "utf8"))
+        msg = {
+            "type":"numPieces",
+            "content": num_pieces[str(len(addresses))]
+        }
+        #sock.send(bytes(json.dumps(num_pieces[str(len(addresses))]), "utf8"))
+        sock.send(bytes(json.dumps(msg), "utf8"))
 
 def send_stock():
     """Sends the stock to the clients to be shuffled"""
 
-    msg = "{rcvStock}"
-    broadcast(bytes(msg,"utf8"))
+    #msg = "{rcvStock}"
+    
+    #broadcast(bytes(msg,"utf8"))
 
     global stock
     for sock in clients:
-        sock.send(bytes(json.dumps(stock), "utf8"))
-        tmp = json.loads(receive(sock))
+        msg = {
+            "type":"rcvStock",
+            "content":stock
+        }
+        #sock.send(bytes(json.dumps(stock), "utf8"))
+        sock.send(bytes(json.dumps(msg), "utf8"))
+        
+        tmp = eval(receive(sock))
         stock.clear()
-        stock = stock + tmp
+        stock.append(tmp)
+        #stock = stock + tmp
         
 
 
@@ -154,21 +187,27 @@ def distribute():
     """Distriutes the stock to the clients to pick a piece and shuffled"""
     global fClient
     global stock
-    stockClients = stock
     client = clientRandom() 
     fClient = client
-    msg = "{dstrStock}"
-    client.send(bytes(msg,"utf8"))
-    time.sleep(.05)
-    client.send(bytes(json.dumps(stockClients), "utf8"))
-    stockClients = json.loads(receive(client))
+    #msg = "{dstrStock}"
+    msg = { 
+            "type":"dstrStock",
+            "content": stock
+        }
+    #client.send(bytes(msg,"utf8"))
+    #time.sleep(.05)
+    #client.send(bytes(json.dumps(stockClients), "utf8"))
+    client.send(bytes(json.dumps(msg), "utf8"))
 
-    while len(stockClients) != (28-(len(addresses)*num_pieces[str(len(addresses))])):
+    stock = eval(receive(client))
+    while len(stock) != (28-(len(addresses)*num_pieces[str(len(addresses))])):
         client = clientRandom(client)
-        client.send(bytes(msg,"utf8"))
-        time.sleep(.05)
-        client.send(bytes(json.dumps(stockClients), "utf8"))
-        stockClients = json.loads(receive(client))
+        #client.send(bytes(msg,"utf8"))
+        #time.sleep(.05)
+        #client.send(bytes(json.dumps(stockClients), "utf8"))
+        msg["content"] = stock
+        client.send(bytes(json.dumps(msg), "utf8"))
+        stock = eval(receive(client))
 
 
 def clientRandom(last=None):
@@ -186,8 +225,11 @@ def broadcastPlayers():
     players_info = {}
     for c in clients:
         players_info[clients[c]] = addresses[c]
-    
-    broadcast(bytes(json.dumps(players_info),"UTF-8"))
+    msg = {
+        "type": "players_info",
+        "content": players_info
+    }
+    broadcast(bytes(json.dumps(msg),"UTF-8"))
 
 
 '''
