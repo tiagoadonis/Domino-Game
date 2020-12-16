@@ -34,7 +34,8 @@ stock = ['0-0', '0-1', '0-2', '0-3', '0-4', '0-5', '0-6',
         '3-3', '3-4', '3-5', '3-6',
         '4-4', '4-5', '4-6',
         '5-5', '5-6',
-        '6-6']        
+        '6-6'] 
+game_state = {}       
 
 
 def accept_incoming_connections():
@@ -54,7 +55,7 @@ def accept_incoming_connections():
             print("%s:%s has connected." % client_address)
             msg= {
                 "type":"print",
-                "content":"Greetings from the server! Now type your name and press enter!"
+                "content":"Greetings from the server! Wait for other players to join!"
             }
             client.send(bytes(json.dumps(msg), "utf8"))
             addresses[client] = client_address
@@ -98,7 +99,11 @@ def handle_client(client):  # Takes client socket as argument.
             if len(addresses) == len1:
                 check_start = True
     else:
-        client.send(bytes("fail","utf8"))
+        msg= {
+                "type":"quit",
+                "content":""
+            }
+        client.send(bytes(json.dumps(msg), "utf8"))
         client.close()
     
 def receive(client):
@@ -139,7 +144,7 @@ def game():
     broadcast(bytes(json.dumps(msg),"utf8"))
     time.sleep(.05)
     distribute()
-    print(stock)
+    print("Pieces on the table: ",stock)
     msg["content"] = "Stock Distributed!"
     broadcast(bytes(json.dumps(msg),"utf8"))
     time.sleep(.05)
@@ -147,28 +152,22 @@ def game():
     msg["content"] = ""
     broadcast(bytes(json.dumps(msg),"utf8"))
     time.sleep(.05)
-    #play()
+    play()
+    print("Remaining pieces: ",stock)
 
 
 def send_numP():
     
-    #msg = "{numPieces}"
-    #broadcast(bytes(msg,"utf8"))
 
     for sock in clients:
         msg = {
             "type":"numPieces",
             "content": num_pieces[str(len(addresses))]
         }
-        #sock.send(bytes(json.dumps(num_pieces[str(len(addresses))]), "utf8"))
         sock.send(bytes(json.dumps(msg), "utf8"))
 
 def send_stock():
     """Sends the stock to the clients to be shuffled"""
-
-    #msg = "{rcvStock}"
-    
-    #broadcast(bytes(msg,"utf8"))
 
     global stock
     for sock in clients:
@@ -176,12 +175,10 @@ def send_stock():
             "type":"rcvStock",
             "content":stock
         }
-        #sock.send(bytes(json.dumps(stock), "utf8"))
         sock.send(bytes(json.dumps(msg), "utf8"))
         
         tmp = eval(receive(sock))
         stock = tmp
-        #stock = stock + tmp
         
 
 
@@ -191,7 +188,6 @@ def distribute():
     global stock
     client = clientRandom() 
     fClient = client
-    #msg = "{dstrStock}"
     msg = { 
             "type":"dstrStock",
             "content": stock
@@ -203,9 +199,6 @@ def distribute():
     ndone = True
     while ndone:
       
-    #client.send(bytes(msg,"utf8"))
-    #time.sleep(.05)
-    #client.send(bytes(json.dumps(stockClients), "utf8"))
         msg_tosend = { 
                 "type":"dstrStock",
                 "content": msg['stock']
@@ -214,26 +207,13 @@ def distribute():
             if name == msg['sendTo']:
                 c.send(bytes(json.dumps(msg_tosend), "utf8"))
                 temp_msg = json.loads(receive(c))
-        
-        print(temp_msg)
-        print(type(temp_msg['ndone']) )
-        print(temp_msg['ndone'] )
 
         ndone = temp_msg['ndone'] 
         msg = temp_msg
         time.sleep(.05)
     
-    #print(msg)
     stock = msg["stock"]
-    #stock = eval(receive(client))
-    #while len(stock) != (28-(len(addresses)*num_pieces[str(len(addresses))])):
-        #client = clientRandom(client)
-        ###client.send(bytes(msg,"utf8"))
-        ###time.sleep(.05)
-        ###client.send(bytes(json.dumps(stockClients), "utf8"))
-        #msg["content"] = stock
-        #client.send(bytes(json.dumps(msg), "utf8"))
-        #stock = eval(receive(client))
+    
 
 
 def clientRandom(last=None):
@@ -257,6 +237,72 @@ def broadcastPlayers():
     }
     broadcast(bytes(json.dumps(msg),"UTF-8"))
 
+def play():
+    c = -1
+    global game_state
+    global stock
+    prev_state = {"A":"a"}
+    no_winner = True
+    winner = None
+    draw = False
+    s_nempty = len(stock) != 0
+    
+    while s_nempty and (prev_state != game_state or draw) and no_winner:
+        
+        
+        time.sleep(.05)
+        if not draw:
+            if c == len(clients)-1:
+                prev_state = game_state
+                s_nempty = len(stock) != 0
+                c = 0
+            else:
+                c += 1
+        
+        msg = {
+            "type": "game_state",
+            "content": game_state
+        }
+        
+        client = list(clients.keys())[c]
+        client.send(bytes(json.dumps(msg), "utf8"))
+        received = json.loads(receive(client))
+            
+        draw = False
+        if "draw" in list(received.keys()):
+            
+            
+            draw_msg = {
+                "type": "draw",
+                "content": stock
+            }
+            time.sleep(.05)
+            client.send(bytes(json.dumps(draw_msg), "utf8"))
+            if len(stock)!=0:
+                draw = received["draw"]
+                received_draw = json.loads(receive(client))
+                stock = received_draw['stock']##implement draw type message
+        
+        if "win" in list(received.keys()):
+            no_winner = False
+            winner = client
+        
+        if not draw:
+            game_state = received
+
+    msg = {
+        "type": "print",
+        "content": "Game ended"
+    }
+    broadcast(bytes(json.dumps(msg),"UTF-8"))
+    if not no_winner:
+        msg = {
+            "type": "print",
+            "content": "The winner is "+str(clients[winner])
+        }
+        print("The winner is "+str(clients[winner]))
+        broadcast(bytes(json.dumps(msg),"UTF-8"))
+    
 
 '''
 def clientsListOrder(first):
@@ -369,7 +415,7 @@ addresses = {}
 
 HOST = '127.0.0.1'
 PORT = 1240
-BUFSIZ = 1024
+BUFSIZ = 2048
 ADDR = (HOST, PORT)
 
 SERVER = socket(AF_INET, SOCK_STREAM)
