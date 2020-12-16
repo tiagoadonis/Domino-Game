@@ -242,17 +242,19 @@ def play():
     global game_state
     global stock
     prev_state = {"A":"a"}
-    no_winner = True
+    no_winner = True  
     winner = None
     draw = False
     s_nempty = len(stock) != 0
     
-    while s_nempty and (prev_state != game_state or draw) and no_winner:
-        
+    while s_nempty and (prev_state != game_state or draw) and no_winner:#while stock not empty after a round and (the state of previous the previous round is different to the current
+                                                                        # or a player drew) and there is no winner
         
         time.sleep(.05)
-        if not draw:
-            if c == len(clients)-1:
+        if not draw: #if the last play was a draw dont enter
+            #proceed if the last play wasnt a draw 
+
+            if c == len(clients)-1:# if got to the last player, update client to the first player and update previous game state and check if stock is empty
                 prev_state = game_state
                 s_nempty = len(stock) != 0
                 c = 0
@@ -265,11 +267,11 @@ def play():
         }
         
         client = list(clients.keys())[c]
-        client.send(bytes(json.dumps(msg), "utf8"))
-        received = json.loads(receive(client))
+        client.send(bytes(json.dumps(msg), "utf8"))#send game-state to current client
+        received = json.loads(receive(client))#wait for response
             
         draw = False
-        if "draw" in list(received.keys()):
+        if "draw" in list(received.keys()):# if response was a draw
             
             
             draw_msg = {
@@ -277,31 +279,31 @@ def play():
                 "content": stock
             }
             time.sleep(.05)
-            client.send(bytes(json.dumps(draw_msg), "utf8"))
-            if len(stock)!=0:
-                draw = received["draw"]
-                received_draw = json.loads(receive(client))
-                stock = received_draw['stock']##implement draw type message
+            client.send(bytes(json.dumps(draw_msg), "utf8"))#send stock to player with type draw
+            if len(stock)!=0:#if the stock wasnt empty
+                draw = received["draw"] #update variable draw to True
+                received_draw = json.loads(receive(client)) 
+                stock = received_draw['stock']#update stock with the received after client draw
         
-        if "win" in list(received.keys()):
-            no_winner = False
-            winner = client
+        if "win" in list(received.keys()): #if response had a win warning
+            no_winner = False #update no winner to false
+            winner = client   #save the client that won
         
         if not draw:
-            game_state = received
+            game_state = received # if last response wasnt a draw update game_state
 
     msg = {
         "type": "print",
         "content": "Game ended"
     }
-    broadcast(bytes(json.dumps(msg),"UTF-8"))
-    if not no_winner:
+    broadcast(bytes(json.dumps(msg),"UTF-8")) # send game ended to all players
+    if not no_winner: #if winner
         msg = {
             "type": "print",
             "content": "The winner is "+str(clients[winner])
         }
         print("The winner is "+str(clients[winner]))
-        broadcast(bytes(json.dumps(msg),"UTF-8"))
+        broadcast(bytes(json.dumps(msg),"UTF-8"))#send winner to all players
     
 
 '''
