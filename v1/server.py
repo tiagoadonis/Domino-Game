@@ -36,8 +36,6 @@ stock = ['0-0', '0-1', '0-2', '0-3', '0-4', '0-5', '0-6',
         '5-5', '5-6',
         '6-6']        
 
-#Client info
-clients=[]
 
 def accept_incoming_connections():
     """Sets up handling for incoming clients"""
@@ -77,29 +75,32 @@ def handle_client(client):  # Takes client socket as argument.
 
     global check_start
     name = receive(client)
-    welcome = 'Welcome %s! If you ever want to quit, type {quit} to exit.' % name
-    msg= {
-        "type":"print",
-        "content":welcome
-    }
-    #client.send(bytes(welcome, "utf8"))
-    client.send(bytes(json.dumps(msg), "utf8"))
-    msg["content"] = "%s has joined the game!\n" % name
-    broadcast(bytes(json.dumps(msg), "utf8"))
-    clients[client] = name
-    # If 2 <= players <= 4, then start game in 10 sec if no one shows up!
-    broadcastPlayers()
-    if len(addresses) >= 2 and len(addresses) <= 5:
-        len1 = len(addresses)
-        msg["content"] = "If no one else appears in the next 20 seconds, the game will begin!"
+    
+    if (client not in clients.keys()) and name!="" and (name not in clients.values()) or name == "done":
+    
+        welcome = 'Welcome %s! If you ever want to quit, type {quit} to exit.' % name
+        msg= {
+            "type":"print",
+            "content":welcome
+        }
+        #client.send(bytes(welcome, "utf8"))
+        client.send(bytes(json.dumps(msg), "utf8"))
+        msg["content"] = "%s has joined the game!\n" % name
         broadcast(bytes(json.dumps(msg), "utf8"))
-        time.sleep(20)
-        if len(addresses) == len1:
-            check_start = True
-    
-    
+        clients[client] = name
+        # If 2 <= players <= 4, then start game in 10 sec if no one shows up!
 
-
+        if len(addresses) >= 2 and len(addresses) <= 5:
+            len1 = len(addresses)
+            msg["content"] = "If no one else appears in the next 20 seconds, the game will begin!"
+            broadcast(bytes(json.dumps(msg), "utf8"))
+            time.sleep(10)
+            if len(addresses) == len1:
+                check_start = True
+    else:
+        client.send(bytes("fail","utf8"))
+        client.close()
+    
 def receive(client):
     """Handles receiving of messages"""
 
@@ -130,6 +131,8 @@ def game():
     broadcast(bytes(json.dumps(msg),"utf8"))
     time.sleep(.05)
     send_numP()
+    time.sleep(.05)
+    broadcastPlayers()
     time.sleep(.05)
     send_stock()
     msg["content"] = "Stock Shuffled!"
@@ -177,8 +180,7 @@ def send_stock():
         sock.send(bytes(json.dumps(msg), "utf8"))
         
         tmp = eval(receive(sock))
-        stock.clear()
-        stock.append(tmp)
+        stock = tmp
         #stock = stock + tmp
         
 
@@ -194,20 +196,44 @@ def distribute():
             "type":"dstrStock",
             "content": stock
         }
+    
+    client.send(bytes(json.dumps(msg), "utf8"))
+    msg = json.loads(receive(client))
+    time.sleep(.05)
+    ndone = True
+    while ndone:
+      
     #client.send(bytes(msg,"utf8"))
     #time.sleep(.05)
     #client.send(bytes(json.dumps(stockClients), "utf8"))
-    client.send(bytes(json.dumps(msg), "utf8"))
+        msg_tosend = { 
+                "type":"dstrStock",
+                "content": msg['stock']
+            }
+        for c,name in clients.items():
+            if name == msg['sendTo']:
+                c.send(bytes(json.dumps(msg_tosend), "utf8"))
+                temp_msg = json.loads(receive(c))
+        
+        print(temp_msg)
+        print(type(temp_msg['ndone']) )
+        print(temp_msg['ndone'] )
 
-    stock = eval(receive(client))
-    while len(stock) != (28-(len(addresses)*num_pieces[str(len(addresses))])):
-        client = clientRandom(client)
-        #client.send(bytes(msg,"utf8"))
-        #time.sleep(.05)
-        #client.send(bytes(json.dumps(stockClients), "utf8"))
-        msg["content"] = stock
-        client.send(bytes(json.dumps(msg), "utf8"))
-        stock = eval(receive(client))
+        ndone = temp_msg['ndone'] 
+        msg = temp_msg
+        time.sleep(.05)
+    
+    #print(msg)
+    stock = msg["stock"]
+    #stock = eval(receive(client))
+    #while len(stock) != (28-(len(addresses)*num_pieces[str(len(addresses))])):
+        #client = clientRandom(client)
+        ###client.send(bytes(msg,"utf8"))
+        ###time.sleep(.05)
+        ###client.send(bytes(json.dumps(stockClients), "utf8"))
+        #msg["content"] = stock
+        #client.send(bytes(json.dumps(msg), "utf8"))
+        #stock = eval(receive(client))
 
 
 def clientRandom(last=None):
@@ -360,3 +386,5 @@ if __name__ == "__main__":
     ACCEPT_THREAD_1.join()
     ACCEPT_THREAD_2.join()
     SERVER.close()
+
+    
