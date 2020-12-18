@@ -46,7 +46,7 @@ class SymmetricCipher:
         return unpadded
 
     @staticmethod
-    def staticdecipher(ciphered_text,k):
+    def s_decipher(ciphered_text,k):
 
         iv = ciphered_text[:16]
         ciphered_text = ciphered_text[16:]

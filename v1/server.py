@@ -35,7 +35,9 @@ stock = ['0-0', '0-1', '0-2', '0-3', '0-4', '0-5', '0-6',
         '4-4', '4-5', '4-6',
         '5-5', '5-6',
         '6-6'] 
-game_state = {}       
+game_state = {}    
+sharedBase = 5
+sharedPrime = 131
 
 
 def accept_incoming_connections():
@@ -135,13 +137,17 @@ def game():
     msg["content"] = "The Game is going to Start!"
     broadcast(bytes(json.dumps(msg),"utf8"))
     time.sleep(.05)
-    send_numP()
+    setUpServerClientDH()
     time.sleep(.05)
-    broadcastPlayers()
+    send_numP()
     time.sleep(.05)
     send_stock()
     msg["content"] = "Stock Shuffled!"
     broadcast(bytes(json.dumps(msg),"utf8"))
+    time.sleep(.05)
+    broadcastPlayers()
+    time.sleep(.05)
+    setUpClientDH()
     time.sleep(.05)
     distribute()
     print("Pieces on the table: ",stock)
@@ -155,6 +161,47 @@ def game():
     play()
     print("Remaining pieces: ",stock)
 
+def setUpServerClientDH():
+
+    for c in list(clients.keys()):
+        
+        secret = random.randint(1,16)
+        value = ( sharedBase**secret ) % sharedPrime
+
+        msg = {
+            "type" : "server_DH",
+            "content" : value
+        }
+        c.send(bytes(json.dumps(msg),"utf-8"))
+        client_DH[c] = (int(receive(c))** secret) % sharedPrime
+
+def setUpClientDH():
+
+    for client in list(clients.keys()):
+
+        msg_tosend = {
+            "type" : "setUpClientDH",
+            "content": ""
+        }
+        client.send(bytes(json.dumps(msg_tosend),"utf-8"))
+        a = receive(client)
+        received = json.loads(a)
+        while "done" not in list(received.keys()):
+            if "sendTo" in list(received.keys()):
+                rcv_name = received["sendTo"]
+                for c,name in clients.items():
+                    if name == rcv_name:
+                        c.send(bytes(json.dumps(received["content"]),"utf-8"))
+            client.send(bytes(json.dumps(msg_tosend),"utf-8"))
+            received = json.loads(receive(client))
+    
+    for client in list(clients.keys()):
+        msg_tosend2 = {
+                "type" : "calculate_DH",
+                "content": ""
+            }
+        
+        client.send(bytes(json.dumps(msg_tosend2),"utf-8"))
 
 def send_numP():
     
@@ -414,6 +461,7 @@ def play():
 
 clients = {}
 addresses = {}
+client_DH = {}
 
 HOST = '127.0.0.1'
 PORT = 1240

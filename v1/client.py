@@ -4,6 +4,7 @@ from threading import Thread
 import sys
 import json
 import random
+import time
 
 # variables
 numPieces = 0
@@ -13,14 +14,16 @@ points = 0
 my_name= ""
 players= []
 srv_stock_empty = False
+players_DH = {}
+server_DH = 0
 
 def main():
     """Main function"""
     while True:
         try:
             a = receive()
-            
             msg = json.loads(a)
+
             
             if msg["type"] == "print":
                 print(msg["content"])
@@ -28,13 +31,22 @@ def main():
                     if msg["content"].find(my_name)!=-1:
                         print("I won!!!!!!!!!")
                     print("My stock: ", stock)
-
-            if msg["type"] == "quit":
+                    print("Shared keys: ",players_DH)
+            
+            elif msg["type"] == "server_DH":
+                getServerKeyDH(msg["content"])
+            elif msg["type"] == "setUpClientDH":
+                setUpClientDH()
+            elif msg["type"] == "client_DH":
+                saveValueDH(msg["content"])
+            elif msg["type"] == "calculate_DH":
+                calculateKeyDH()
+            elif msg["type"] == "quit":
                 client_socket.close()
                 break
-            if msg["type"] == "players_info":
+            elif msg["type"] == "players_info":
                 save_players(msg["content"])
-            if msg["type"] == "numPieces":
+            elif msg["type"] == "numPieces":
                 num_pieces(msg["content"])
             elif msg["type"] == "rcvStock":
                 rcv_stock(msg["content"])
@@ -284,6 +296,79 @@ def getPiece(n):#get first piece available with the number n
             return p
     return None
 
+def setUpClientDH():
+
+    done = True
+    for p in players:
+        if p not in list(players_DH.keys()) and done:
+            done = False
+            getKeyDH(p)
+        elif done:
+            if "secret" not in list(players_DH[p].keys()) and done:
+                done = False
+                getKeyDH(p)
+            elif done:
+                if players_DH[p]["secret"] is None and done:
+                    done = False
+                    getKeyDH(p)
+    if done:
+        msg = {
+            "done" : True,
+        }
+        print(players_DH)
+        send(json.dumps(msg))
+
+def getServerKeyDH(received):
+    secret = random.randint(1,16)
+    value = ( sharedBase**secret ) % sharedPrime
+    data = received
+    send(str(value))
+    server_DH = (int(data)** secret) % sharedPrime
+
+def getKeyDH(player):
+
+    secret = random.randint(1,16)
+    value = ( sharedBase**secret ) % sharedPrime
+    msg = {
+        "sendTo": player,
+        "content":{
+            "type": "client_DH",
+            "content":{
+                "from": my_name,
+                "value": value
+            }
+        }
+    }
+    if player not in list(players_DH.keys()):
+        players_DH[player]={
+            "secret" : secret,
+            "value" : None
+        }
+    else:
+        players_DH[player]["secret"] = secret
+
+    send(json.dumps(msg))
+
+def saveValueDH(received):
+    if received["from"] not in list(players_DH.keys()):
+        players_DH[received["from"]]={
+            "secret" : None,
+            "value" : received["value"]
+        }
+    else:
+        players_DH[received["from"]]["value"] = received["value"]
+
+
+def calculateKeyDH():
+    
+    temp = {}
+    global players_DH
+    for player,content in players_DH.items():
+        temp[player] = {"key": None}
+        temp[player]["key"] = (content["value"]**content["secret"]) % sharedPrime
+    
+    players_DH = temp
+
 '''
 def play_card():
     """play a card"""
@@ -327,6 +412,8 @@ HOST = "127.0.0.1"
 PORT = 1240
 BUFSIZ = 2048
 ADDR = (HOST, PORT)
+sharedBase = 5
+sharedPrime = 131
 
 client_socket = socket(AF_INET, SOCK_STREAM)
 client_socket.connect(ADDR)
