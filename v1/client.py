@@ -1,76 +1,95 @@
 #!/usr/bin/env python3
+from symmetric_cipher import *
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 import sys
 import json
 import random
 import time
+import base64
 
 # variables
 numPieces = 0
 stock = []
+ciphered_stock = []
+pseudo_stock_keys = {}
 nRound = 0
 points = 0
 my_name= ""
 players= []
 srv_stock_empty = False
 players_DH = {}
+players_ciphers = {}
 server_DH = 0
 
 def main():
     """Main function"""
-    while True:
+    nerror = True
+    while nerror:
         try:
             a = receive()
             msg = json.loads(a)
-
             
-            if msg["type"] == "print":
-                print(msg["content"])
-                if msg["content"].find("The winner is") != -1:
-                    if msg["content"].find(my_name)!=-1:
-                        print("I won!!!!!!!!!")
-                    print("My stock: ", stock)
-                    print("Shared keys: ",players_DH)
+            nerror = choose(msg)
             
-            elif msg["type"] == "server_DH":
-                getServerKeyDH(msg["content"])
-            elif msg["type"] == "setUpClientDH":
-                setUpClientDH()
-            elif msg["type"] == "client_DH":
-                saveValueDH(msg["content"])
-            elif msg["type"] == "calculate_DH":
-                calculateKeyDH()
-            elif msg["type"] == "quit":
-                client_socket.close()
-                break
-            elif msg["type"] == "players_info":
-                save_players(msg["content"])
-            elif msg["type"] == "numPieces":
-                num_pieces(msg["content"])
-            elif msg["type"] == "rcvStock":
-                rcv_stock(msg["content"])
-            elif msg["type"] == "dstrStock":
-                dstr_stock(msg["content"])
-            elif msg["type"] == "doneStock":
-                print("My stock: ",stock)
-            elif msg["type"] == "game_state":
-                play(msg["content"])
-            elif msg["type"] == "draw":
-                draw(msg["content"])
-                
-            
-            '''
-			if msg == "{play}":
-                play_piece()
-			if msg == "{wonRound}":
-                print("Won round\n")
-            if msg == "{lostRound}":
-                lost_round()
-			'''
         except OSError:  # Possibly client has left the chat.
             break
+
+def choose(msg):
+    global ciphered_stock
+    if msg["type"] == "print":
+        print(msg["content"])
+        if msg["content"].find("The winner is") != -1:
+            if msg["content"].find(my_name)!=-1:
+                print("I won!!!!!!!!!")
+            print("My stock: ", stock)
+            #print("Shared keys: ",players_DH)
+            #print("Ciphers: ",players_ciphers)
+            #ciphered_stock = deserializeStock(ciphered_stock)
+            #print("Ciphered stock: ", ciphered_stock)
+            #print("Ciphered stock keys: ", pseudo_stock_keys)
+            
+    elif msg["type"] == "server_DH":
+        getServerKeyDH(msg["content"])
+    elif msg["type"] == "setUpClientDH":
+        setUpClientDH()
+    elif msg["type"] == "client_DH":
+        saveValueDH(msg["content"])
+    elif msg["type"] == "calculate_DH":
+        calculateKeyDH()
+    elif msg["type"] == "quit":
+        client_socket.close()
+        return False
+    elif msg["type"] == "players_info":
+        save_players(msg["content"])
+    elif msg["type"] == "numPieces":
+        num_pieces(msg["content"])
+    elif msg["type"] == "rcvStock":
+        rcv_stock(msg["content"])
+    elif msg["type"] == "rcvPseudoStock":
+        rcv_pseudo_stock(msg["content"])
+    elif msg["type"] == "dstrStock":
+        dstr_stock(msg["content"])
+    elif msg["type"] == "dstrCipheredStock":
+        if "from" in list(msg.keys()):
+            dstr_ciphered_stock(msg["from"],msg["content"])
+        else:
+            dstr_ciphered_stock(None,msg["content"])
+    elif msg["type"] == "doneStock":
+        print("My stock: ",stock)
+    elif msg["type"] == "game_state":
+        play(msg["content"])
+    elif msg["type"] == "draw":
+        draw(msg["content"])
     
+    return True
+    
+def decipher(name,ciphered):
+    print(name)
+    deciphered = players_ciphers[name].decipher(ciphered,players_ciphers[name].key)
+    print(deciphered)
+
+
 def save_players(content):
     #save other players names in order
     for name in content:
@@ -84,7 +103,6 @@ def num_pieces(content):
 
 def dstr_stock(content):
     """Client Take / Not Take a piece from stock"""
-
     stockS = content	# Stock from server
     arr = [1, 0, 0, 0, 0] # 20% probability of taking a piece
     prob = random.choice(arr)
@@ -114,17 +132,63 @@ def dstr_stock(content):
                         stockS.append(a)
                 stock = b
                 print("Swap a piece")
-            else:
-                random.shuffle(stockS)#if none of the others happen shuffle
 
         
         sendRandomPlayer(stockS)#Send to server to be routed to a random player
 
     else:
         dic = {
-            "sendTo" : "done",
             "ndone": False,
             "stock"  : stockS
+        }
+        send(str(json.dumps(dic))) # when finished send to server with flag ndone = False
+
+def dstr_ciphered_stock(from_p,content):
+    """Client Take / Not Take a piece from stock"""
+    stockS = []
+    if from_p is None:
+        stockS = content	# Stock from server
+    else:
+        content = deserializeBytes(content)
+        deciphered = players_ciphers[from_p]["symcipher"].decipher(content,players_ciphers[from_p]["symcipher"].key)
+        stockS = eval(deciphered)
+
+    arr = [1, 0, 0, 0, 0] # 20% probability of taking a piece
+    prob = random.choice(arr)
+    global ciphered_stock
+    global numPieces
+   
+    if len(stockS) != (28 - ((len(players)+1)*numPieces)): #while the stock received from the server isnt the right size repeat
+        if prob == 1 and len(ciphered_stock) != numPieces: #take a piece
+            
+            ciphered_stock.append(stockS[0])
+            temp = stockS[1:]
+            stockS = temp
+            print("Took a piece")
+            
+            
+        else:
+            p = random.randint(0, 1) # 50% probability of swaping a piece
+            if p == 1 and len(ciphered_stock) == numPieces:
+                chg = random.choice(ciphered_stock)
+                b = []
+                for a in ciphered_stock:
+                    if a != chg:
+                        b.append(a)
+                    else:
+                        b.append(stockS[0])
+                        stockS = stockS[1:]
+                        stockS.append(a)
+                ciphered_stock = b
+                print("Swap a piece")
+
+        
+        sendRandomPlayerv2(stockS)#Send to server to be routed to a random player
+
+    else:
+        dic = {
+            "ndone": False,
+            "ciphered_stock"  : stockS
         }
         send(str(json.dumps(dic))) # when finished send to server with flag ndone = False
 
@@ -136,6 +200,46 @@ def rcv_stock(content):
             stk=stk[0]
     send(str(stk))
     print("Sent!")
+
+def rcv_pseudo_stock(content):
+    
+    
+    if len(content[0]) == 2:
+        content = deserializePseudo(content)
+    else:
+        content = deserializeStock(content)
+    l_pwd = [1]
+    pwd = 1
+    ciphered = b''
+    sym_cipher = SymmetricCipher("124")#random class to initialize sym_cipher
+
+    ciphered_stock = []
+
+    for c in content:
+        while pwd in l_pwd or ciphered in list(pseudo_stock_keys.keys()):
+            pwd = str(random.randint(1,100))
+            
+            sym_cipher = SymmetricCipher(str(pwd))
+            if not isinstance(c,bytes):
+                c = str(c)
+            ciphered = sym_cipher.cipher(c,sym_cipher.key)
+
+            
+        pseudo_stock_keys[ciphered] = sym_cipher.key
+        ciphered_stock.append(ciphered)
+
+    #print(ciphered_stock)
+    '''
+    temp = []
+    for c in ciphered_stock:
+        temp.append(SymmetricCipher.s_decipher(c,pseudo_stock_keys[c]))
+    print(temp)
+    '''
+    msg = {
+        "pseudo_randomized": serializeStock(ciphered_stock) 
+    }
+    send(json.dumps(msg))
+ 
 
 def receive():
     """Handles receiving of messages"""
@@ -154,11 +258,23 @@ def sendRandomPlayer(stock_temp):  #ask the server to send the message to a rand
     """Handles sending of messages"""
 
     dic = {
-        "ndone": True,
         "sendTo" : random.choice(players),
         "stock"  : stock_temp
     }
     client_socket.send(bytes(json.dumps(dic), "utf8"))
+
+def sendRandomPlayerv2(stock_temp):  #ask the server to send the message to a random player choosen by me
+    """Handles sending of messages"""
+
+    random_p = random.choice(players)
+
+    ciphered = players_ciphers[random_p]["symcipher"].cipher(str(stock_temp),players_ciphers[random_p]["symcipher"].key)
+    dic = {
+        "sendTo" : random_p,
+        "content"  : serializeBytes(ciphered)
+    }
+    client_socket.send(bytes(json.dumps(dic), "utf8"))
+
     
 def play(game_state):
 
@@ -363,11 +479,47 @@ def calculateKeyDH():
     
     temp = {}
     global players_DH
+    global players_ciphers
+
     for player,content in players_DH.items():
         temp[player] = {"key": None}
         temp[player]["key"] = (content["value"]**content["secret"]) % sharedPrime
     
     players_DH = temp
+    temp = {}
+    for player,content in players_DH.items():
+        temp[player] = {"symcipher": None}
+        temp[player]["symcipher"] = SymmetricCipher(str(players_DH[player]["key"]))
+
+    players_ciphers = temp
+
+def serializeBytes(bit):
+    return base64.encodebytes(bit).decode("ascii")
+    
+def deserializeBytes(str):
+    return base64.decodebytes(str.encode("ascii"))
+
+def serializeStock(rcv_stock):
+    send_stock = []
+    for i in range(len(rcv_stock)):
+        send_stock.append(serializeBytes(rcv_stock[i]))
+
+    return send_stock
+
+def deserializeStock(rcv_stock):
+    send_stock = []
+    for i in range(len(rcv_stock)):
+        send_stock.append(deserializeBytes(rcv_stock[i]))
+            
+    return send_stock
+    
+def deserializePseudo(rcv_pseudo):
+    send_stock = []
+    for i in range(len(rcv_pseudo)):
+        send_stock.append((rcv_pseudo[i][0],deserializeBytes(rcv_pseudo[i][1])))
+   
+    return send_stock
+
 
 '''
 def play_card():
@@ -410,7 +562,7 @@ def lost_round():
 #----Sockets part----#
 HOST = "127.0.0.1"
 PORT = 1240
-BUFSIZ = 2048
+BUFSIZ = 32768
 ADDR = (HOST, PORT)
 sharedBase = 5
 sharedPrime = 131

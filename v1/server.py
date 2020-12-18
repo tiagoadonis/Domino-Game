@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Server for multithreaded application"""
+from symmetric_cipher import *
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 import json 
 import sys
 import time
 import random
+import base64
 
 # Points 
 '''
@@ -38,6 +40,8 @@ stock = ['0-0', '0-1', '0-2', '0-3', '0-4', '0-5', '0-6',
 game_state = {}    
 sharedBase = 5
 sharedPrime = 131
+pseudo_stock = []
+pseudo_stock_keys = {}
 
 
 def accept_incoming_connections():
@@ -97,7 +101,7 @@ def handle_client(client):  # Takes client socket as argument.
             len1 = len(addresses)
             msg["content"] = "If no one else appears in the next 20 seconds, the game will begin!"
             broadcast(bytes(json.dumps(msg), "utf8"))
-            time.sleep(10)
+            time.sleep(3)
             if len(addresses) == len1:
                 check_start = True
     else:
@@ -141,6 +145,8 @@ def game():
     time.sleep(.05)
     send_numP()
     time.sleep(.05)
+    pseudonymizeStock()
+    time.sleep(.05)
     send_stock()
     msg["content"] = "Stock Shuffled!"
     broadcast(bytes(json.dumps(msg),"utf8"))
@@ -150,6 +156,11 @@ def game():
     setUpClientDH()
     time.sleep(.05)
     distribute()
+    time.sleep(.05)
+    print("Pseudo stock: ", pseudo_stock)
+    distributeCiphered()
+    time.sleep(.05)
+    print("Ciphered stock: ", pseudo_stock)
     print("Pieces on the table: ",stock)
     msg["content"] = "Stock Distributed!"
     broadcast(bytes(json.dumps(msg),"utf8"))
@@ -203,6 +214,8 @@ def setUpClientDH():
         
         client.send(bytes(json.dumps(msg_tosend2),"utf-8"))
 
+    
+
 def send_numP():
     
 
@@ -213,10 +226,41 @@ def send_numP():
         }
         sock.send(bytes(json.dumps(msg), "utf8"))
 
+def pseudonymizeStock():
+    global pseudo_stock
+    global pseudo_stock_keys
+
+    l_pwd = []
+    pwd = str(random.randint(1,100))
+    l_pwd.append(pwd)
+    pseudo_cipher = SymmetricCipher(pwd)
+    temp = stock.copy()
+    i = 0
+    while len(temp) != 0:
+        random_piece = random.choice(temp)
+        temp.remove(random_piece)
+        pseudo_stock.append((i,pseudo_cipher.cipher(random_piece,pseudo_cipher.key)))
+        pseudo_stock_keys[i] = {
+            "piece": random_piece,
+            "key" : pseudo_cipher.key
+        }
+
+        while pwd in l_pwd:
+            pwd = str(random.randint(1,100))
+        
+        l_pwd.append(pwd)
+        pseudo_cipher = SymmetricCipher(pwd)
+
+        i += 1
+
+
+
 def send_stock():
     """Sends the stock to the clients to be shuffled"""
 
     global stock
+    global pseudo_stock
+
     for sock in clients:
         msg = {
             "type":"rcvStock",
@@ -226,11 +270,25 @@ def send_stock():
         
         tmp = eval(receive(sock))
         stock = tmp
+
+    pseudo_stock = serializePseudo(pseudo_stock)
+    for sock in clients:
+        msg = {
+            "type":"rcvPseudoStock",
+            "content": pseudo_stock
+        }
+        sock.send(bytes(json.dumps(msg), "utf8"))
+
+        rcv = receive(sock)
+        rcv_msg = json.loads(rcv)
         
+        pseudo_stock = rcv_msg["pseudo_randomized"]#deserializeStock(rcv_msg["pseudo_randomized"])
+
 
 
 def distribute():
     """Distriutes the stock to the clients to pick a piece and shuffled"""
+    
     global fClient
     global stock
     client = clientRandom() 
@@ -239,7 +297,6 @@ def distribute():
             "type":"dstrStock",
             "content": stock
         }
-    
     client.send(bytes(json.dumps(msg), "utf8"))
     msg = json.loads(receive(client))
     time.sleep(.05)
@@ -254,13 +311,46 @@ def distribute():
             if name == msg['sendTo']:
                 c.send(bytes(json.dumps(msg_tosend), "utf8"))
                 temp_msg = json.loads(receive(c))
-
-        ndone = temp_msg['ndone'] 
+                
+        if "ndone" in list(temp_msg.keys()):
+            ndone = temp_msg['ndone'] 
         msg = temp_msg
         time.sleep(.05)
     
     stock = msg["stock"]
+
+
+def distributeCiphered():
+    """Distriutes the stock to the clients to pick a piece and shuffled"""
     
+    global pseudo_stock
+    client = clientRandom() 
+    msg = { 
+            "type":"dstrCipheredStock",
+            "content": pseudo_stock
+        }
+    client.send(bytes(json.dumps(msg), "utf8"))
+    msg = json.loads(receive(client))
+    ndone = True
+    while ndone:
+        
+        msg_tosend = { 
+                    "type":"dstrCipheredStock",
+                    "from": clients[client],
+                    "content": msg['content']
+                }
+        for c,name in clients.items():
+            if name == msg['sendTo']:
+                c.send(bytes(json.dumps(msg_tosend), "utf8"))
+                temp_msg = json.loads(receive(c))
+                client = c
+                
+        if "ndone" in list(temp_msg.keys()):
+            ndone = temp_msg['ndone'] 
+        msg = temp_msg
+        time.sleep(.05)
+    
+    pseudo_stock = msg["ciphered_stock"]
 
 
 def clientRandom(last=None):
@@ -352,6 +442,32 @@ def play():
         print("The winner is "+str(clients[winner]))
         broadcast(bytes(json.dumps(msg),"UTF-8"))#send winner to all players
     
+def serializeBytes(bit):
+    return base64.encodebytes(bit).decode("ascii")
+    
+def deserializeBytes(string):
+    return base64.decodebytes(string.encode("ascii"))
+
+def serializeStock(rcv_stock):
+    send_stock = []
+    for i in range(len(rcv_stock)):
+        send_stock.append(serializeBytes(rcv_stock[i]))
+
+    return send_stock
+
+def deserializeStock(rcv_stock):
+    send_stock = []
+    for i in range(len(rcv_stock)):
+        send_stock.append(serializeBytes(rcv_stock[i]))
+            
+    return send_stock
+    
+def serializePseudo(rcv_pseudo):
+    send_stock = []
+    for i in range(len(rcv_pseudo)):
+        send_stock.append((rcv_pseudo[i][0],serializeBytes(rcv_pseudo[i][1])))
+   
+    return send_stock
 
 '''
 def clientsListOrder(first):
@@ -465,7 +581,7 @@ client_DH = {}
 
 HOST = '127.0.0.1'
 PORT = 1240
-BUFSIZ = 2048
+BUFSIZ = 32768
 ADDR = (HOST, PORT)
 
 SERVER = socket(AF_INET, SOCK_STREAM)

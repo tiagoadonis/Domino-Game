@@ -6,7 +6,6 @@ from cryptography.hazmat.primitives import hashes, padding
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 
-
 class SymmetricCipher:
 
     def __init__(self,password):
