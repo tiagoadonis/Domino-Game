@@ -2,6 +2,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from cryptography.hazmat.backends import default_backend
 
 class AsymmetricCipher:
@@ -14,6 +15,10 @@ class AsymmetricCipher:
     
     def serializePublicKey(self):
         return self.public_key.public_bytes(encoding=serialization.Encoding.PEM,format=serialization.PublicFormat.SubjectPublicKeyInfo)
+    
+    @staticmethod
+    def loadPublicKey(k_bytes):
+        return load_pem_public_key(k_bytes)
 
     @staticmethod
     def cipher(plaintext,pub_k):

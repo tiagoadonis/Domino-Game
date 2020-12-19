@@ -16,6 +16,8 @@ pseudo_stock = []
 temp_pseudo_stock = []
 ciphered_stock = []
 pseudo_stock_keys = {}
+drawed_piece = None
+asym_cipher_drawed_piece = None
 nRound = 0
 points = 0
 my_name= ""
@@ -48,13 +50,6 @@ def choose(msg):
             if msg["content"].find(my_name)!=-1:
                 print("I won!!!!!!!!!")
             print("My stock: ", stock)
-            print("ciphered stock: " , len(ciphered_stock),ciphered_stock)
-            print("test stock: ",len(pseudo_stock),pseudo_stock)
-            #print("Shared keys: ",players_DH)
-            #print("Ciphers: ",players_ciphers)
-            #ciphered_stock = deserializeStock(ciphered_stock)
-            #print("Ciphered stock: ", ciphered_stock)
-            #print("Ciphered stock keys: ", pseudo_stock_keys)
             
     elif msg["type"] == "server_DH":
         getServerKeyDH(msg["content"])
@@ -71,12 +66,8 @@ def choose(msg):
         save_players(msg["content"])
     elif msg["type"] == "numPieces":
         num_pieces(msg["content"])
-    elif msg["type"] == "rcvStock":
-        rcv_stock(msg["content"])
     elif msg["type"] == "rcvPseudoStock":
         rcv_pseudo_stock(msg["content"])
-    elif msg["type"] == "dstrStock":
-        dstr_stock(msg["content"])
     elif msg["type"] == "dstrCipheredStock":
         if "from" in list(msg.keys()):
             dstr_ciphered_stock(msg["from"],msg["content"])
@@ -84,13 +75,23 @@ def choose(msg):
             dstr_ciphered_stock(None,msg["content"])
     elif msg["type"] == "returnCipherStockKeys":
         returnCipherKeys()
+    elif msg["type"] == "returnCipherPieceKey":
+        returnCipherPieceKey(msg["content"])
     elif msg["type"] == "decipherStock":
         decipherStock(msg['from'],msg['content'])
+    elif msg["type"] == "decipherDrawPiece":
+        decipherDrawPiece(msg['from'],msg['content'])
     elif msg["type"] == "insertPublicKeys":
         if "from" in list(msg.keys()):
             sendPublicKeys(msg['from'],msg['content'])
         else:
             sendPublicKeys(None,msg['content'])
+    elif msg["type"] == "insertPublicKeyDrawedPiece":
+        sendPublicKeyDrawedPiece()
+    elif msg["type"] == "decipherPieces":
+        getAndCheckPieces(msg['content'])
+    elif msg["type"] == "decipherPseudoDrawPiece":
+        getAndCheckDrawedPiece(msg['content'])
     elif msg["type"] == "doneStock":
         print("My stock: ",stock)
     elif msg["type"] == "game_state":
@@ -111,54 +112,11 @@ def save_players(content):
         else:
             my_pos = i
         i+=1
-    print(my_pos)
 
 def num_pieces(content):
     global numPieces
     numPieces = content
     print("Number of pieces per player: "+str(numPieces))
-
-def dstr_stock(content):
-    """Client Take / Not Take a piece from stock"""
-    stockS = content	# Stock from server
-    arr = [1, 0, 0, 0, 0] # 20% probability of taking a piece
-    prob = random.choice(arr)
-    global stock
-    global numPieces
-   
-    if len(stockS) != (28 - ((len(players)+1)*numPieces)): #while the stock received from the server isnt the right size repeat
-        if prob == 1 and len(stock) != numPieces: #take a piece
-            
-            stock.append(stockS[0])
-            temp = stockS[1:]
-            stockS = temp
-            print("Took a piece")
-            
-            
-        else:
-            p = random.randint(0, 1) # 50% probability of swaping a piece
-            if p == 1 and len(stock) == numPieces:
-                chg = random.choice(stock)
-                b = []
-                for a in stock:
-                    if a != chg:
-                        b.append(a)
-                    else:
-                        b.append(stockS[0])
-                        stockS = stockS[1:]
-                        stockS.append(a)
-                stock = b
-                print("Swap a piece")
-
-        
-        sendRandomPlayer(stockS)#Send to server to be routed to a random player
-
-    else:
-        dic = {
-            "ndone": False,
-            "stock"  : stockS
-        }
-        send(str(json.dumps(dic))) # when finished send to server with flag ndone = False
 
 def dstr_ciphered_stock(from_p,content):
     """Client Take / Not Take a piece from stock"""
@@ -209,15 +167,6 @@ def dstr_ciphered_stock(from_p,content):
         }
         send(str(json.dumps(dic))) # when finished send to server with flag ndone = False
 
-def rcv_stock(content):
-    """Client Shuffle and sends stock to Server"""
-    stk = content
-    random.shuffle(stk)
-    while len(stk) == 1:
-            stk=stk[0]
-    send(str(stk))
-    print("Sent!")
-
 def rcv_pseudo_stock(content):
     
     
@@ -255,6 +204,12 @@ def returnCipherKeys():
     p = serializePseudoCipherKeys()
     send(json.dumps(p))
 
+def returnCipherPieceKey(content):
+    msg = {
+        "key" : serializeBytes(pseudo_stock_keys[deserializeBytes(content)])
+    }
+    send(json.dumps(msg))
+
 def decipherStock(from_p,ciphers_keys):
     global temp_pseudo_stock
     global pseudo_stock
@@ -274,6 +229,20 @@ def decipherStock(from_p,ciphers_keys):
                 ciphered_stock.append(serialdeciphered)
 
     temp_pseudo_stock = pseudo_stock.copy()
+    send(json.dumps({}))
+
+def decipherDrawPiece(from_p,cipher_key):
+    
+    global drawed_piece
+    ciphered = deserializeBytes(drawed_piece)
+    key = deserializeBytes(cipher_key)
+    deciphered = SymmetricCipher.s_decipher(ciphered,key)
+
+    if (from_p == players[0] and my_pos!=0) or (my_pos == 0 and from_p == my_name):
+        drawed_piece = eval(deciphered)
+    else:
+        drawed_piece = serializeBytes(deciphered)
+
     send(json.dumps({}))
 
 def sendPublicKeys(from_p,content):
@@ -310,8 +279,50 @@ def sendPublicKeys(from_p,content):
             "ndone": False,
             "public_keys"  : keys_dic
         }
-        send(str(json.dumps(dic))) # when finished send to server with flag ndone = False
+        send(json.dumps(dic)) # when finished send to server with flag ndone = False
 
+def sendPublicKeyDrawedPiece():
+
+    global asym_cipher_drawed_piece
+    key_dic = {}
+    asym_cipher_drawed_piece = AsymmetricCipher(1024)
+    key_dic[drawed_piece[0]] = serializeBytes(asym_cipher_drawed_piece.serializePublicKey())
+    msg = {
+        "public_key" : key_dic
+    }
+    send(json.dumps(msg))
+
+def getAndCheckPieces(content):
+
+    global stock
+    for i,a_c in asym_ciphers.items():
+        my_pk = serializeBytes(a_c.serializePublicKey())
+        if my_pk in list(content.keys()):
+            deciphered = a_c.decipher(deserializeBytes(content[my_pk]),a_c.private_key)
+            t_k = json.loads(deciphered.replace("'","\""))
+            #verify
+            key = deserializeBytes(t_k['key'])
+            
+            for t in pseudo_stock:
+                if t[0] == int(i):
+                    deciphered_piece = SymmetricCipher.s_decipher(t[1],key).decode('utf-8')
+                    if deciphered_piece == t_k['piece']:
+                        stock.append(deciphered_piece)
+    
+    send(json.dumps({}))
+
+def getAndCheckDrawedPiece(content):
+    deserialized_content = deserializeBytes(content)
+    deciphered = asym_cipher_drawed_piece.decipher(deserialized_content,asym_cipher_drawed_piece.private_key)
+    t_k = json.loads(deciphered.replace("'","\""))
+    key = deserializeBytes(t_k['key'])
+
+    deciphered_piece = SymmetricCipher.s_decipher(drawed_piece[1],key).decode('utf-8')
+    if deciphered_piece == t_k['piece']:
+        stock.append(deciphered_piece)
+        send(json.dumps({}))
+    else:
+        send(json.dumps({"error" : True}))
 
 def receive():
     """Handles receiving of messages"""
@@ -349,7 +360,6 @@ def sendRandomPlayerv2(msg):  #ask the server to send the message to a random pl
 
     
 def play(game_state):
-
     if len(game_state) != 0: # after first play
         played = False
         for k in list(game_state.keys()):
@@ -379,6 +389,8 @@ def play(game_state):
                                             str(p[0]) : False,
                                             str(p[-1]): True,
                                         }
+                                    print("Played: ", "("+p[0]+"-"+p[-1]+")","\nMy stock: ",stock)
+                                    
                             else:
                                 #add double piece to game state
                                 played = True #update played
@@ -390,6 +402,8 @@ def play(game_state):
                                             "s2": False,
                                             str(d[0]): True,    # put the value of both numbers as key and set it to True to avoid other pieces attaching to it
                                         }
+                                print("Played: ", "("+d[0]+"-"+d[0]+")","\nMy stock: ",stock)
+
                         elif not piece[n]:#look for connections on normal pieces similar to the if above
                             d = getDoublePiece(n) 
                             if d is None:
@@ -404,11 +418,14 @@ def play(game_state):
                                             str(p[0]) : True,
                                             str(p[-1]): False,
                                         }
+                                        
                                     else:
                                         game_state[len(game_state)] = {
                                             str(p[0]) : False,
                                             str(p[-1]): True,
                                         }
+
+                                    print("Played: ", "("+p[0]+"-"+p[-1]+")","\nMy stock: ",stock)
                             else:
                                 
                                 played = True
@@ -420,6 +437,8 @@ def play(game_state):
                                             "s2": False,
                                             str(d[0]): True,  
                                         }
+
+                                print("Played: ", "("+d[0]+"-"+d[0]+")","\nMy stock: ",stock)
                             
                     if changed:# if any piece was attached set the respective position where it attached to true
                         game_state[k][n] = True
@@ -455,17 +474,19 @@ def play(game_state):
                 str(piece[0]): False,
                 str(piece[-1]): False
             }
+        print("Played: ", piece,"\nMy stock: ",stock)
         send(json.dumps(game_state))
 
 def draw(rcv_stock):
+
+    global drawed_piece
     
     if len(rcv_stock) != 0: # if the stock received form the server isnt empty, take a piece and send the rest
-        stock.append(rcv_stock[0])
-        temp = rcv_stock[1:]
-        rcv_stock = temp
+        drawed_piece = rcv_stock[0]
         dic = {
-                "stock"  : rcv_stock
+                "piece_taken"  : rcv_stock[0]
             }
+        print("Drawing a piece from the stock, ")
         send(str(json.dumps(dic)))
     else: #if the stock was empty update global variable
         srv_stock_empty = True
@@ -503,7 +524,6 @@ def setUpClientDH():
         msg = {
             "done" : True,
         }
-        print(players_DH)
         send(json.dumps(msg))
 
 def getServerKeyDH(received):

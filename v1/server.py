@@ -158,13 +158,9 @@ def game():
     time.sleep(.05)
     setUpClientDH()
     time.sleep(.05)
-    distribute()
-    time.sleep(.05)
-    #print("Pseudo stock: ", pseudo_stock)
     distributeCiphered()
     time.sleep(.05)
-    #print("Ciphered stock: ", pseudo_stock)
-    print("Pieces on the table: ",stock)
+    print("Pieces on the table: ",stock_4players)
     msg["content"] = "Stock Distributed!"
     broadcast(bytes(json.dumps(msg),"utf8"))
     time.sleep(.05)
@@ -172,12 +168,14 @@ def game():
     time.sleep(.05)
     askPublicKeys()
     time.sleep(.05)
+    sendTilesAndKeys()
+    time.sleep(.05)
     msg["type"] = "doneStock"
     msg["content"] = ""
     broadcast(bytes(json.dumps(msg),"utf8"))
     time.sleep(.05)
     play()
-    print("Remaining pieces: ",stock)
+    print(len(pseudo_stock)," pieces on the table: ",pseudo_stock)
 
 def setUpServerClientDH():
 
@@ -268,16 +266,6 @@ def send_stock():
     global stock
     global pseudo_stock
 
-    for sock in clients:
-        msg = {
-            "type":"rcvStock",
-            "content":stock
-        }
-        sock.send(bytes(json.dumps(msg), "utf8"))
-        
-        tmp = eval(receive(sock))
-        stock = tmp
-
     pseudo_stock = serializePseudo(pseudo_stock)
     for sock in clients:
         msg = {
@@ -289,38 +277,7 @@ def send_stock():
         rcv = receive(sock)
         rcv_msg = json.loads(rcv)
         
-        pseudo_stock = rcv_msg["pseudo_randomized"]#deserializeStock(rcv_msg["pseudo_randomized"])
-
-
-
-def distribute():
-    """Distriutes the stock to the clients to pick a piece and shuffled"""
-    
-    global stock
-    client = clientRandom() 
-    msg = { 
-            "type":"dstrStock",
-            "content": stock
-        }
-    client.send(bytes(json.dumps(msg), "utf8"))
-    msg = json.loads(receive(client))
-    ndone = True
-    while ndone:
-      
-        msg_tosend = { 
-                "type":"dstrStock",
-                "content": msg['stock']
-            }
-        for c,name in clients.items():
-            if name == msg['sendTo']:
-                c.send(bytes(json.dumps(msg_tosend), "utf8"))
-                temp_msg = json.loads(receive(c))
-                
-        if "ndone" in list(temp_msg.keys()):
-            ndone = temp_msg['ndone'] 
-        msg = temp_msg
-
-    stock = msg["stock"]
+        pseudo_stock = rcv_msg["pseudo_randomized"]
 
 
 def distributeCiphered():
@@ -354,8 +311,8 @@ def distributeCiphered():
         msg = temp_msg
         time.sleep(.05)
     
-    stock_4players = msg["ciphered_stock"]
-    pseudo_stock = msg["ciphered_stock"]
+    stock_4players = msg["ciphered_stock"].copy()
+    pseudo_stock = msg["ciphered_stock"].copy()
 
 def distributeDecipherKeys():
     i = len(clients) - 1
@@ -392,9 +349,63 @@ def distributeDecipherKeys():
             }
             c2.send(bytes(json.dumps(decipher_msg), "utf8"))
             receive(c2)
-        #for c2 in list(clients.keys()):
-            #send the rest of the keys to all
         i-=1
+
+def decipherDrawedPiece(piece,player):
+    i = len(clients) - 1
+    clients_sock = list(clients.keys())
+    deciphered_piece = None
+    while i!=-1:
+        c1 = clients_sock[i]
+        msg = {
+            "type": "returnCipherPieceKey",
+            "content": piece,
+        }
+        c1.send(bytes(json.dumps(msg), "utf8"))
+        temp_msg = json.loads(receive(c1))
+        #decipher piece
+        deserialized_piece = deserializeBytes(piece)
+        deciphered = SymmetricCipher.s_decipher(deserialized_piece,deserializeBytes(temp_msg['key']))
+        if i == 0:
+            deciphered = eval(deciphered)
+        else:
+            piece = serializeBytes(deciphered)
+        
+        decipher_msg = {
+                "type": "decipherDrawPiece",
+                "from": clients[c1],
+                "content" : temp_msg['key']
+        }
+        player.send(bytes(json.dumps(decipher_msg), "utf8"))
+        receive(player)
+        i-=1
+    
+    pseudo_stock.remove(deciphered)
+    msg = { 
+            "type":"insertPublicKeyDrawedPiece",
+            "content": {}
+        }
+    
+    player.send(bytes(json.dumps(msg), "utf8"))
+    msg = json.loads(receive(player))
+    dic = msg['public_key']
+
+    i = list(dic.keys())[0]
+    tk_dic = pseudo_stock_keys[int(i)]
+    
+    tile_key = serializeBytes(tk_dic['key'])
+    tk_dic['key'] = tile_key  #dictionary with the tile and key already serialized
+
+    pk = AsymmetricCipher.loadPublicKey(deserializeBytes(dic[i])) #get and load public key
+    ciphered = AsymmetricCipher.cipher(str(tk_dic),pk)
+
+    msg = {
+        "type" : "decipherPseudoDrawPiece",
+        "content": serializeBytes(ciphered)
+    }
+
+    player.send(bytes(json.dumps(msg), "utf8"))
+    receive(player)
 
 def askPublicKeys():
     global players_public_keys
@@ -423,8 +434,32 @@ def askPublicKeys():
             ndone = temp_msg['ndone'] 
         msg = temp_msg
     
-    players_public_keys = msg["public_keys"] #need deserialize
-    print(players_public_keys)
+    players_public_keys = msg["public_keys"]
+
+def sendTilesAndKeys():
+
+    tile_keys_dic = {}
+
+    for i in list(players_public_keys.keys()):
+        tk_dic = pseudo_stock_keys[int(i)]
+        tile_key = serializeBytes(tk_dic['key'])
+        tk_dic['key'] = tile_key  #dictionary with the tile and key already serialized
+
+        pk = AsymmetricCipher.loadPublicKey(deserializeBytes(players_public_keys[i])) #get and load public key
+        ciphered = AsymmetricCipher.cipher(str(tk_dic),pk)
+
+        tile_keys_dic[players_public_keys[i]] = serializeBytes(ciphered)
+    
+    msg = {
+        "type": "decipherPieces",
+        "content": tile_keys_dic 
+    }
+
+    for c in list(clients.keys()):
+        c.send(bytes(json.dumps(msg), "utf8"))
+        temp_msg = json.loads(receive(c))
+        
+
 
 def clientRandom(last=None):
     """Returns a random client, excluding last one"""
@@ -450,7 +485,7 @@ def broadcastPlayers():
 def play():
     c = -1
     global game_state
-    global stock
+    global stock_4players
     prev_state = {"A":"a"}
     no_winner = True  
     winner = None
@@ -466,7 +501,7 @@ def play():
 
             if c == len(clients)-1:# if got to the last player, update client to the first player and update previous game state and check if stock is empty
                 prev_state = game_state
-                s_nempty = len(stock) != 0
+                s_nempty = len(stock_4players) != 0
                 c = 0
             else:
                 c += 1
@@ -486,14 +521,16 @@ def play():
             
             draw_msg = {
                 "type": "draw",
-                "content": stock
+                "content": stock_4players
             }
-            time.sleep(.05)
             client.send(bytes(json.dumps(draw_msg), "utf8"))#send stock to player with type draw
-            if len(stock)!=0:#if the stock wasnt empty
+            if len(stock_4players)!=0:#if the stock wasnt empty
                 draw = received["draw"] #update variable draw to True
                 received_draw = json.loads(receive(client)) 
-                stock = received_draw['stock']#update stock with the received after client draw
+                piece_taken = received_draw['piece_taken']
+                stock_4players.remove(piece_taken) #update stock with the received after client draw
+                decipherDrawedPiece(piece_taken,client)
+
         
         if "win" in list(received.keys()): #if response had a win warning
             no_winner = False #update no winner to false
@@ -541,112 +578,6 @@ def serializePseudo(rcv_pseudo):
         send_stock.append((rcv_pseudo[i][0],serializeBytes(rcv_pseudo[i][1])))
    
     return send_stock
-
-'''
-def clientsListOrder(first):
-    clts = []
-    for a in list(clients)[list(clients).index(first):]:                                       
-        clts.append(a)
-    while len(clts) != 4:
-        for a in clients:                                       
-            if a not in clts:
-                clts.append(a)
-    return clts
-
-
-def result(table, clientsL):
-    """Gives the result of round"""
-    loser = [table[0], clientsL[0]]                                 # Loser starts as the first client
-    naipe = table[0][1]                                             # Naipe of first client
-    for i in table[1:]:                                             # Iterates through the list
-        if i[1] == naipe:                                           # If naipe of first equals naipe of i
-            if letterNum(i[0]) > letterNum(loser[0][0]):            # If number of i > number of first
-                loser = [i, clientsL[table.index(i)]]               # New loser of round -> loser=[card, client]   
-    print(table)
-
-    for c in clientsL:
-        if loser[1] == c:
-            msg = "{lostRound}"                                     # Client lost round
-            c.send(bytes(msg, "utf8"))
-            time.sleep(.05)
-            point = points(table)
-            print("Points: %d\n" % point)
-            c.send(bytes(json.dumps(point), "utf8"))
-        else:
-            msg = "{wonRound}"                                      # Client won round
-            c.send(bytes(msg, "utf8"))
-            time.sleep(.05)
-            
-
-    global pClient1, pClient2, pClient3, pClient4
-    for l in clients:                                               # Assign points to clients
-        if loser[1] == l:
-            idx = list(clients).index(l)
-            if idx == 0:
-                pClient1 += points(table)
-            elif idx == 1:
-                pClient2 += points(table)
-            elif idx == 2:
-                pClient3 += points(table)
-            elif idx == 3:
-                pClient4 += points(table)
-
-
-def points(table):
-    points = 0
-    for i in table:
-        if i == 'QS':
-            points += 13
-        elif i[1] == 'H':
-            points += 1
-    return points
-
-
-def letterNum(letter):
-    switch = {
-        '2': 2,
-        '3': 3,
-        '4': 4,
-        '5': 5,
-        '6': 6,
-        '7': 7,
-        '8': 8,
-        '9': 9,
-        'T': 10,
-        'J': 11,
-        'Q': 12,
-        'K': 13,
-        'A': 14
-    }
-    return switch.get(letter)
-
-
-def play():
-    """Play the game"""
-    table = []
-    global fClient
-    for i in range(13):                                     # game is composed of 13 rounds
-        msg = ("Round %d" % i)
-        print(msg)
-        broadcast(bytes(msg,"utf8"))
-        time.sleep(.05)
-        clts = clientsListOrder(fClient)
-        for c in clts:                                      # turn of each client
-            msg = "{play}"
-            c.send(bytes(msg,"utf8"))
-            time.sleep(.05)
-            c.send(bytes(json.dumps(table),"utf8"))
-            card = json.loads(receive(c))
-            table.append(card)
-            print(card)
-        result(table, clts)
-        table = []
-    
-    print("Client 1 : %d" % pClient1)
-    print("Client 2 : %d" % pClient2)
-    print("Client 3 : %d" % pClient3)
-    print("Client 4 : %d" % pClient4)
-'''
 
 clients = {}
 addresses = {}
