@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Server for multithreaded application"""
 from symmetric_cipher import *
+from asymmetric_cipher import *
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 import json 
@@ -41,7 +42,9 @@ game_state = {}
 sharedBase = 5
 sharedPrime = 131
 pseudo_stock = []
+stock_4players = []
 pseudo_stock_keys = {}
+players_public_keys = {}
 
 
 def accept_incoming_connections():
@@ -157,13 +160,17 @@ def game():
     time.sleep(.05)
     distribute()
     time.sleep(.05)
-    print("Pseudo stock: ", pseudo_stock)
+    #print("Pseudo stock: ", pseudo_stock)
     distributeCiphered()
     time.sleep(.05)
-    print("Ciphered stock: ", pseudo_stock)
+    #print("Ciphered stock: ", pseudo_stock)
     print("Pieces on the table: ",stock)
     msg["content"] = "Stock Distributed!"
     broadcast(bytes(json.dumps(msg),"utf8"))
+    time.sleep(.05)
+    distributeDecipherKeys()
+    time.sleep(.05)
+    askPublicKeys()
     time.sleep(.05)
     msg["type"] = "doneStock"
     msg["content"] = ""
@@ -289,17 +296,14 @@ def send_stock():
 def distribute():
     """Distriutes the stock to the clients to pick a piece and shuffled"""
     
-    global fClient
     global stock
     client = clientRandom() 
-    fClient = client
     msg = { 
             "type":"dstrStock",
             "content": stock
         }
     client.send(bytes(json.dumps(msg), "utf8"))
     msg = json.loads(receive(client))
-    time.sleep(.05)
     ndone = True
     while ndone:
       
@@ -315,14 +319,14 @@ def distribute():
         if "ndone" in list(temp_msg.keys()):
             ndone = temp_msg['ndone'] 
         msg = temp_msg
-        time.sleep(.05)
-    
+
     stock = msg["stock"]
 
 
 def distributeCiphered():
     """Distriutes the stock to the clients to pick a piece and shuffled"""
     
+    global stock_4players
     global pseudo_stock
     client = clientRandom() 
     msg = { 
@@ -350,8 +354,77 @@ def distributeCiphered():
         msg = temp_msg
         time.sleep(.05)
     
+    stock_4players = msg["ciphered_stock"]
     pseudo_stock = msg["ciphered_stock"]
 
+def distributeDecipherKeys():
+    i = len(clients) - 1
+    clients_sock = list(clients.keys())
+    while i!=-1:
+        c1 = clients_sock[i]
+        msg = {
+            "type": "returnCipherStockKeys",
+            "content": "",
+        }
+        c1.send(bytes(json.dumps(msg), "utf8"))
+        temp_msg = json.loads(receive(c1))
+        
+        for serialcipher in list(temp_msg.keys()):
+            if serialcipher in pseudo_stock:#test which are in the table
+                serialkey = temp_msg.pop(serialcipher)#if in the table remove from those to be sent to the players
+                #decipher those on pseudo stock 
+                ciphered = deserializeBytes(serialcipher)
+                key = deserializeBytes(serialkey)
+                deciphered = SymmetricCipher.s_decipher(ciphered,key)
+                pseudo_stock.remove(serialcipher)
+                if i == 0:
+                    deciphered = eval(deciphered)
+                    pseudo_stock.append(deciphered)
+                else:
+                    serialdeciphered = serializeBytes(deciphered)
+                    pseudo_stock.append(serialdeciphered)
+
+        for c2 in list(clients.keys()):
+            decipher_msg = {
+                "type": "decipherStock",
+                "from": clients[c1],
+                "content" : temp_msg
+            }
+            c2.send(bytes(json.dumps(decipher_msg), "utf8"))
+            receive(c2)
+        #for c2 in list(clients.keys()):
+            #send the rest of the keys to all
+        i-=1
+
+def askPublicKeys():
+    global players_public_keys
+    client = clientRandom() 
+    msg = { 
+            "type":"insertPublicKeys",
+            "content": {}
+        }
+    client.send(bytes(json.dumps(msg), "utf8"))
+    msg = json.loads(receive(client))
+    ndone = True
+    while ndone:
+        
+        msg_tosend = { 
+                    "type":"insertPublicKeys",
+                    "from": clients[client],
+                    "content": msg['content']
+                }
+        for c,name in clients.items():
+            if name == msg['sendTo']:
+                c.send(bytes(json.dumps(msg_tosend), "utf8"))
+                temp_msg = json.loads(receive(c))
+                client = c
+                
+        if "ndone" in list(temp_msg.keys()):
+            ndone = temp_msg['ndone'] 
+        msg = temp_msg
+    
+    players_public_keys = msg["public_keys"] #need deserialize
+    print(players_public_keys)
 
 def clientRandom(last=None):
     """Returns a random client, excluding last one"""

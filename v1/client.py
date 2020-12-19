@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from symmetric_cipher import *
+from asymmetric_cipher import *
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 import sys
@@ -11,6 +12,8 @@ import base64
 # variables
 numPieces = 0
 stock = []
+pseudo_stock = []
+temp_pseudo_stock = []
 ciphered_stock = []
 pseudo_stock_keys = {}
 nRound = 0
@@ -21,6 +24,8 @@ srv_stock_empty = False
 players_DH = {}
 players_ciphers = {}
 server_DH = 0
+my_pos = 0
+asym_ciphers = {}
 
 def main():
     """Main function"""
@@ -43,6 +48,8 @@ def choose(msg):
             if msg["content"].find(my_name)!=-1:
                 print("I won!!!!!!!!!")
             print("My stock: ", stock)
+            print("ciphered stock: " , len(ciphered_stock),ciphered_stock)
+            print("test stock: ",len(pseudo_stock),pseudo_stock)
             #print("Shared keys: ",players_DH)
             #print("Ciphers: ",players_ciphers)
             #ciphered_stock = deserializeStock(ciphered_stock)
@@ -75,6 +82,15 @@ def choose(msg):
             dstr_ciphered_stock(msg["from"],msg["content"])
         else:
             dstr_ciphered_stock(None,msg["content"])
+    elif msg["type"] == "returnCipherStockKeys":
+        returnCipherKeys()
+    elif msg["type"] == "decipherStock":
+        decipherStock(msg['from'],msg['content'])
+    elif msg["type"] == "insertPublicKeys":
+        if "from" in list(msg.keys()):
+            sendPublicKeys(msg['from'],msg['content'])
+        else:
+            sendPublicKeys(None,msg['content'])
     elif msg["type"] == "doneStock":
         print("My stock: ",stock)
     elif msg["type"] == "game_state":
@@ -84,17 +100,18 @@ def choose(msg):
     
     return True
     
-def decipher(name,ciphered):
-    print(name)
-    deciphered = players_ciphers[name].decipher(ciphered,players_ciphers[name].key)
-    print(deciphered)
-
 
 def save_players(content):
     #save other players names in order
+    global my_pos
+    i = 0 
     for name in content:
         if name != my_name:
             players.append(name)
+        else:
+            my_pos = i
+        i+=1
+    print(my_pos)
 
 def num_pieces(content):
     global numPieces
@@ -228,18 +245,73 @@ def rcv_pseudo_stock(content):
         pseudo_stock_keys[ciphered] = sym_cipher.key
         ciphered_stock.append(ciphered)
 
-    #print(ciphered_stock)
-    '''
-    temp = []
-    for c in ciphered_stock:
-        temp.append(SymmetricCipher.s_decipher(c,pseudo_stock_keys[c]))
-    print(temp)
-    '''
     msg = {
         "pseudo_randomized": serializeStock(ciphered_stock) 
     }
     send(json.dumps(msg))
+
+def returnCipherKeys():
+    #serialize pseudo_stock_keys and send to server
+    p = serializePseudoCipherKeys()
+    send(json.dumps(p))
+
+def decipherStock(from_p,ciphers_keys):
+    global temp_pseudo_stock
+    global pseudo_stock
+    for serialcipher in list(ciphers_keys.keys()):
+        if serialcipher in ciphered_stock:#test which are in the stock
+            serialkey = ciphers_keys[serialcipher]
+            #decipher those on stock 
+            ciphered = deserializeBytes(serialcipher)
+            key = deserializeBytes(serialkey)
+            deciphered = SymmetricCipher.s_decipher(ciphered,key)
+            ciphered_stock.remove(serialcipher)
+            if (from_p == players[0] and my_pos!=0) or (my_pos == 0 and from_p == my_name):
+                deciphered = eval(deciphered)
+                pseudo_stock.append(deciphered)
+            else:
+                serialdeciphered = serializeBytes(deciphered)
+                ciphered_stock.append(serialdeciphered)
+
+    temp_pseudo_stock = pseudo_stock.copy()
+    send(json.dumps({}))
+
+def sendPublicKeys(from_p,content):
  
+    global asym_ciphers
+    global numPieces
+    keys_dic = {}
+    if from_p is None:
+        keys_dic = content	# keys_dic from server
+    else:
+        content = deserializeBytes(content)
+        deciphered = players_ciphers[from_p]["symcipher"].decipher(content,players_ciphers[from_p]["symcipher"].key)
+        keys_dic = json.loads(deciphered.decode('utf-8').replace("'","\""))
+
+    arr = [1, 0, 0, 0, 0] # 20% probability of putting a public key
+    prob = random.choice(arr)
+    
+   
+    if len(keys_dic) != (28 - ((len(players)+1)*numPieces)): #while the keys dictionary received isnt the right size repeat
+        if prob == 1 and len(asym_ciphers) != numPieces: #create keys, send the public and save the private
+            
+            #key creation and insertion
+            tuple_i = random.choice(temp_pseudo_stock)
+            temp_pseudo_stock.remove(tuple_i)
+            i = tuple_i[0]
+            asym_cipher = AsymmetricCipher(1024)
+            asym_ciphers[str(i)] = asym_cipher
+            keys_dic[str(i)] = serializeBytes(asym_cipher.serializePublicKey())
+            print("Put one public key")
+        sendRandomPlayerv2(keys_dic)#Send to server to be routed to a random player
+
+    else:
+        dic = {
+            "ndone": False,
+            "public_keys"  : keys_dic
+        }
+        send(str(json.dumps(dic))) # when finished send to server with flag ndone = False
+
 
 def receive():
     """Handles receiving of messages"""
@@ -263,12 +335,12 @@ def sendRandomPlayer(stock_temp):  #ask the server to send the message to a rand
     }
     client_socket.send(bytes(json.dumps(dic), "utf8"))
 
-def sendRandomPlayerv2(stock_temp):  #ask the server to send the message to a random player choosen by me
+def sendRandomPlayerv2(msg):  #ask the server to send the message to a random player choosen by me
     """Handles sending of messages"""
 
     random_p = random.choice(players)
 
-    ciphered = players_ciphers[random_p]["symcipher"].cipher(str(stock_temp),players_ciphers[random_p]["symcipher"].key)
+    ciphered = players_ciphers[random_p]["symcipher"].cipher(str(msg),players_ciphers[random_p]["symcipher"].key)
     dic = {
         "sendTo" : random_p,
         "content"  : serializeBytes(ciphered)
@@ -519,6 +591,13 @@ def deserializePseudo(rcv_pseudo):
         send_stock.append((rcv_pseudo[i][0],deserializeBytes(rcv_pseudo[i][1])))
    
     return send_stock
+
+def serializePseudoCipherKeys():
+    serialized = {}
+    for c in list(pseudo_stock_keys.keys()):
+        serialized[serializeBytes(c)] = serializeBytes(pseudo_stock_keys[c])
+    
+    return serialized
 
 
 '''
