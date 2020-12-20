@@ -10,16 +10,6 @@ import time
 import random
 import base64
 
-# Points 
-'''
-pClient1 = 0
-pClient2 = 0
-pClient3 = 0
-pClient4 = 0
-'''
-
-# First Client
-fClient = None
 
 # Check if game is about o start 
 check_start = False
@@ -158,6 +148,8 @@ def game():
     time.sleep(.05)
     setUpClientDH()
     time.sleep(.05)
+    setUpClientAsymCiphers()
+    time.sleep(.05)
     distributeCiphered()
     time.sleep(.05)
     print("Pieces on the table: ",stock_4players)
@@ -218,11 +210,30 @@ def setUpClientDH():
             }
         
         client.send(bytes(json.dumps(msg_tosend2),"utf-8"))
-
+        
     
+def setUpClientAsymCiphers():
+
+    for client in list(clients.keys()):
+        msg ={
+            "type": "setUpAsymCipher",
+            "content": ""
+        }
+        client.send(bytes(json.dumps(msg),"utf-8"))
+        a = receive(client)
+        received = json.loads(a)
+        
+        for k in list(received.keys()):
+            for player_to_send,player_to_send_name in clients.items():
+                name = received[k]
+                if player_to_send_name == k:
+                    ciphered_msg = received[k]
+                    ciphered_msg["type"] = "savePlayerPublicKey"
+                    player_to_send.send(bytes(json.dumps(ciphered_msg), "utf8"))
+                    receive(player_to_send)
+
 
 def send_numP():
-    
 
     for sock in clients:
         msg = {
@@ -491,7 +502,7 @@ def play():
     winner = None
     draw = False
     s_nempty = len(stock) != 0
-    
+    ola = 0
     while s_nempty and (prev_state != game_state or draw) and no_winner:#while stock not empty after a round and (the state of previous the previous round is different to the current
                                                                         # or a player drew) and there is no winner
         
@@ -500,21 +511,20 @@ def play():
             #proceed if the last play wasnt a draw 
 
             if c == len(clients)-1:# if got to the last player, update client to the first player and update previous game state and check if stock is empty
-                prev_state = game_state
+                prev_state = game_state.copy()
                 s_nempty = len(stock_4players) != 0
                 c = 0
             else:
                 c += 1
         
         msg = {
-            "type": "game_state",
-            "content": game_state
+            "type": "play",
         }
         
         client = list(clients.keys())[c]
         client.send(bytes(json.dumps(msg), "utf8"))#send game-state to current client
         received = json.loads(receive(client))#wait for response
-            
+        
         draw = False
         if "draw" in list(received.keys()):# if response was a draw
             
@@ -530,14 +540,32 @@ def play():
                 piece_taken = received_draw['piece_taken']
                 stock_4players.remove(piece_taken) #update stock with the received after client draw
                 decipherDrawedPiece(piece_taken,client)
+            
+            #for c2 in list(clients.keys()):
 
-        
-        if "win" in list(received.keys()): #if response had a win warning
-            no_winner = False #update no winner to false
-            winner = client   #save the client that won
-        
-        if not draw:
-            game_state = received # if last response wasnt a draw update game_state
+
+        if "play" in list(received.keys()):
+            applyPlay(received["play"])
+            if "win" in list(received["play"].keys()): #if response had a win warning
+
+                no_winner = False #update no winner to false
+                winner = client   #save the client that won
+
+            for player_to_send,player_to_send_name in clients.items():
+                if player_to_send != client:
+                    signed_play = {}
+                    signed_play["content"] = received.copy()
+                    signed_play["type"] = "rcvPlay"
+                    signed_play["from"] = clients[client]
+                    player_to_send.send(bytes(json.dumps(signed_play), "utf8"))
+                    msg_from_p = json.loads(receive(player_to_send))
+
+                    if "win" not in list(msg_from_p.keys()):
+                        no_winner = True
+        print("prev_state: ",prev_state)
+        print("game_state: ",game_state)
+        print(s_nempty,prev_state != game_state,draw,no_winner)
+
 
     msg = {
         "type": "print",
@@ -551,7 +579,33 @@ def play():
         }
         print("The winner is "+str(clients[winner]))
         broadcast(bytes(json.dumps(msg),"UTF-8"))#send winner to all players
+
+def applyPlay(play):
+    global game_state 
+    print("Play: ",play)
+    print("Game state: ",game_state)
+
+    play_number = len(game_state)
+    dic_4gs = {}
     
+    if len(game_state) == 0:
+        for n,connected in play['piece'].items():
+            if connected == "True":
+                dic_4gs[n] = True
+            else:
+                dic_4gs[n] = False
+    else:
+        for n,connected in play['piece'].items():
+            if connected == "True":
+                dic_4gs[n] = True
+            else:
+                dic_4gs[n] = False
+        
+        game_state[str(play["connection"]["play"])][play["connection"]["connected"]] = True
+    game_state[str(play_number)] = dic_4gs
+
+    print(game_state)
+
 def serializeBytes(bit):
     return base64.encodebytes(bit).decode("ascii")
     

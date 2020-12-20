@@ -28,6 +28,8 @@ players_ciphers = {}
 server_DH = 0
 my_pos = 0
 asym_ciphers = {}
+game_state = {}
+players_public_keys = {}
 
 def main():
     """Main function"""
@@ -59,6 +61,10 @@ def choose(msg):
         saveValueDH(msg["content"])
     elif msg["type"] == "calculate_DH":
         calculateKeyDH()
+    elif msg["type"] == "setUpAsymCipher":
+        setUpAsymCipher()
+    elif msg["type"] == "savePlayerPublicKey":
+        savePlayerPublicKey(msg["from"],msg["content"])
     elif msg["type"] == "quit":
         client_socket.close()
         return False
@@ -94,8 +100,10 @@ def choose(msg):
         getAndCheckDrawedPiece(msg['content'])
     elif msg["type"] == "doneStock":
         print("My stock: ",stock)
-    elif msg["type"] == "game_state":
-        play(msg["content"])
+    elif msg["type"] == "play":
+        play()
+    elif msg["type"] == "rcvPlay":
+        receivePlay(msg['from'],msg["content"])
     elif msg["type"] == "draw":
         draw(msg["content"])
     
@@ -104,6 +112,7 @@ def choose(msg):
 
 def save_players(content):
     #save other players names in order
+    print(content)
     global my_pos
     i = 0 
     for name in content:
@@ -117,6 +126,30 @@ def num_pieces(content):
     global numPieces
     numPieces = content
     print("Number of pieces per player: "+str(numPieces))
+
+def setUpAsymCipher():
+    global my_asym_cipher
+     
+    my_asym_cipher = AsymmetricCipher(1024)
+    serialized_pk = serializeBytes(my_asym_cipher.serializePublicKey())
+    msg = {}
+    for p in players:
+        
+        ciphered_play = players_ciphers[p]["symcipher"].cipher(serialized_pk ,players_ciphers[p]["symcipher"].key)
+        dic = {
+            "from": my_name,
+            "content": serializeBytes(ciphered_play)
+        }
+        msg[p] = dic
+    send(json.dumps(msg))
+
+def savePlayerPublicKey(from_p,content):
+    ciphered = deserializeBytes(content)
+    cipher = players_ciphers[from_p]["symcipher"]
+    deciphered = SymmetricCipher.s_decipher(ciphered,cipher.key).decode('utf-8')
+
+    players_public_keys[from_p] = AsymmetricCipher.loadPublicKey( deserializeBytes(deciphered))
+    send(json.dumps({}))
 
 def dstr_ciphered_stock(from_p,content):
     """Client Take / Not Take a piece from stock"""
@@ -158,7 +191,7 @@ def dstr_ciphered_stock(from_p,content):
                 print("Swap a piece")
 
         
-        sendRandomPlayerv2(stockS)#Send to server to be routed to a random player
+        sendRandomPlayer(stockS)#Send to server to be routed to a random player
 
     else:
         dic = {
@@ -272,7 +305,7 @@ def sendPublicKeys(from_p,content):
             asym_ciphers[str(i)] = asym_cipher
             keys_dic[str(i)] = serializeBytes(asym_cipher.serializePublicKey())
             print("Put one public key")
-        sendRandomPlayerv2(keys_dic)#Send to server to be routed to a random player
+        sendRandomPlayer(keys_dic)#Send to server to be routed to a random player
 
     else:
         dic = {
@@ -337,16 +370,9 @@ def send(my_msg):  # event is passed by binders.
     if msg == "{quit}":
         client_socket.close()
 
-def sendRandomPlayer(stock_temp):  #ask the server to send the message to a random player choosen by me
-    """Handles sending of messages"""
 
-    dic = {
-        "sendTo" : random.choice(players),
-        "stock"  : stock_temp
-    }
-    client_socket.send(bytes(json.dumps(dic), "utf8"))
 
-def sendRandomPlayerv2(msg):  #ask the server to send the message to a random player choosen by me
+def sendRandomPlayer(msg):  #ask the server to send the message to a random player choosen by me
     """Handles sending of messages"""
 
     random_p = random.choice(players)
@@ -359,7 +385,9 @@ def sendRandomPlayerv2(msg):  #ask the server to send the message to a random pl
     client_socket.send(bytes(json.dumps(dic), "utf8"))
 
     
-def play(game_state):
+def play():
+    play = {}
+    global game_state
     if len(game_state) != 0: # after first play
         played = False
         for k in list(game_state.keys()):
@@ -384,13 +412,21 @@ def play(game_state):
                                             str(p[0]) : True,
                                             str(p[-1]): False,
                                         }
+                                        play['piece'] = {
+                                            str(p[0]) : True,
+                                            str(p[-1]): False,
+                                        }
                                     else:          #if second number set to true others stay false to be attached later
                                         game_state[len(game_state)] = {
                                             str(p[0]) : False,
                                             str(p[-1]): True,
                                         }
+                                        play['piece'] = {
+                                            str(p[0]) : False,
+                                            str(p[-1]): True,
+                                        }
                                     print("Played: ", "("+p[0]+"-"+p[-1]+")","\nMy stock: ",stock)
-                                    
+
                             else:
                                 #add double piece to game state
                                 played = True #update played
@@ -401,6 +437,13 @@ def play(game_state):
                                             "s1" : False,       # s1 and s2 represent the possible connection on the edges(or the numbers) just like the normal pieces
                                             "s2": False,
                                             str(d[0]): True,    # put the value of both numbers as key and set it to True to avoid other pieces attaching to it
+                                        }
+                                play['piece'] = {
+                                            "d1" : True,
+                                            "d2" : False,
+                                            "s1" : False,     
+                                            "s2": False,
+                                            str(d[0]): True,    
                                         }
                                 print("Played: ", "("+d[0]+"-"+d[0]+")","\nMy stock: ",stock)
 
@@ -418,9 +461,17 @@ def play(game_state):
                                             str(p[0]) : True,
                                             str(p[-1]): False,
                                         }
+                                        play['piece'] = {
+                                            str(p[0]) : True,
+                                            str(p[-1]): False,
+                                        }
                                         
                                     else:
                                         game_state[len(game_state)] = {
+                                            str(p[0]) : False,
+                                            str(p[-1]): True,
+                                        }
+                                        play['piece'] = {
                                             str(p[0]) : False,
                                             str(p[-1]): True,
                                         }
@@ -437,11 +488,22 @@ def play(game_state):
                                             "s2": False,
                                             str(d[0]): True,  
                                         }
+                                play['piece'] = {
+                                            "d1" : True,
+                                            "d2" : False,
+                                            "s1" : False,     
+                                            "s2": False,
+                                            str(d[0]): True,    
+                                        }
 
                                 print("Played: ", "("+d[0]+"-"+d[0]+")","\nMy stock: ",stock)
                             
                     if changed:# if any piece was attached set the respective position where it attached to true
                         game_state[k][n] = True
+                        play['connection'] = {
+                            "play" : k,
+                            "connected" : n 
+                        }
         
         if not played and not srv_stock_empty: #if wasnt able to play and server stock isnt empty ask to draw another piece
             #try draw
@@ -451,31 +513,51 @@ def play(game_state):
             send(json.dumps(send_msg))
         else: 
             if len(stock) == 0:#if my stock is empty tell the server i won and send the last game_state
-                send_msg = {
-                    "win" : True,
-                    "game-state": game_state
-                }
-                send(json.dumps(send_msg))
+                sendPlayToAll(play,True)
             else: # wasnt able to play, send game state to server
-                send(json.dumps(game_state))
+                sendPlayToAll(play,False)
     else: #first play, choose random piece and attach its "connections" to the game state
         piece = random.choice(stock)
         stock.remove(piece)
         if piece[0] == piece[-1]:
             game_state[0] = {
-                                "d1" : True,
-                                "d2" : False,
-                                "s1" : False,
-                                "s2": False,
-                                str(piece[0]): True,  
-                            }
+                "d1" : False,
+                "d2" : False,
+                "s1" : False,
+                "s2": False,
+                str(piece[0]): True,  
+            }
+            play['piece'] = {
+                "d1" : False,
+                "d2" : False,
+                "s1" : False,     
+                "s2": False,
+                str(piece[0]): True,    
+            }
         else:
             game_state[0] = {
                 str(piece[0]): False,
                 str(piece[-1]): False
             }
-        print("Played: ", piece,"\nMy stock: ",stock)
-        send(json.dumps(game_state))
+            play['piece'] = {
+                str(piece[0]): False,
+                str(piece[-1]): False
+            }
+        print("Played: ", "("+piece[0]+"-"+piece[-1]+")","\nMy stock: ",stock)
+        sendPlayToAll(play,False)
+        #send(json.dumps(game_state))
+
+def sendPlayToAll(play,win):
+    if win:
+        play["win"] = True
+    
+    signature = my_asym_cipher.sign(json.dumps(play),my_asym_cipher.private_key)
+    msg = {
+        "play": play,
+        "signature" : serializeBytes(signature)
+    }
+    send(json.dumps(msg))
+
 
 def draw(rcv_stock):
 
@@ -486,10 +568,46 @@ def draw(rcv_stock):
         dic = {
                 "piece_taken"  : rcv_stock[0]
             }
-        print("Drawing a piece from the stock, ")
+        print("Drawing a piece from the stock ")
         send(str(json.dumps(dic)))
     else: #if the stock was empty update global variable
         srv_stock_empty = True
+
+def receivePlay(from_p,content):
+
+    play = content['play']
+    signature = deserializeBytes(content['signature'])
+
+    msg = {}
+    global game_state 
+    play_number = len(game_state)
+    dic_4gs = {}
+    if AsymmetricCipher.validate_signature(signature,json.dumps(play), players_public_keys[from_p]):
+        if len(game_state) == 0:
+            for n,connected in play['piece'].items():
+                if connected == "True":
+                    dic_4gs[n] = True
+                else:
+                    dic_4gs[n] = False
+        else:
+            for n,connected in play['piece'].items():
+                if connected == "True":
+                    dic_4gs[n] = True
+                else:
+                    dic_4gs[n] = False
+            
+            game_state[play["connection"]["play"]][play["connection"]["connected"]] = True
+        game_state[play_number] = dic_4gs
+
+        if "win" in list(play.keys()):
+            msg = {
+                "win" : True
+            }
+    else:
+        msg = {
+                "failedSignatureValidation" : True
+            }
+    send(json.dumps(msg))
 
 def getDoublePiece(n): #get first double piece available with the number n
     for p in stock:
