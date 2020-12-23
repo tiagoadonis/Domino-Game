@@ -791,7 +791,6 @@ send(my_name)
 main_thread = Thread(target=main)
 main_thread.start()
 
-my_msg = ""
 while 1:
     my_msg = ""  # For the messages to be sent.
     my_msg = input()

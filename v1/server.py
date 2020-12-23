@@ -37,6 +37,7 @@ pseudo_stock_keys = {}
 players_public_keys = {}
 
 
+
 def accept_incoming_connections():
     """Sets up handling for incoming clients"""
 
@@ -104,6 +105,7 @@ def handle_client(client):  # Takes client socket as argument.
             }
         client.send(bytes(json.dumps(msg), "utf8"))
         client.close()
+        print("Closed connection from")
     
 def receive(client):
     """Handles receiving of messages"""
@@ -502,7 +504,7 @@ def play():
     winner = None
     draw = False
     s_nempty = len(stock) != 0
-    ola = 0
+
     while s_nempty and (prev_state != game_state or draw) and no_winner:#while stock not empty after a round and (the state of previous the previous round is different to the current
                                                                         # or a player drew) and there is no winner
         
@@ -562,6 +564,7 @@ def play():
 
                     if "win" not in list(msg_from_p.keys()):
                         no_winner = True
+        
         print("prev_state: ",prev_state)
         print("game_state: ",game_state)
         print(s_nempty,prev_state != game_state,draw,no_winner)
