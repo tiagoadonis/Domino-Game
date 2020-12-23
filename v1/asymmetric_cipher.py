@@ -25,6 +25,9 @@ class AsymmetricCipher:
 
         if type(plaintext) is not bytes:
             plaintext = bytes(plaintext, 'utf-8')
+
+        #maxLength = (pub_k.key_size // 8) - 2 * hashes.SHA256.digest_size - 2
+
         ciphered_text = pub_k.encrypt(plaintext,padding.OAEP(padding.MGF1(hashes.SHA256()),hashes.SHA256(),None))
 
         return ciphered_text

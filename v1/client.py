@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from symmetric_cipher import *
 from asymmetric_cipher import *
+from cryptography.hazmat.primitives import hashes
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 import sys
@@ -8,6 +9,7 @@ import json
 import random
 import time
 import base64
+import secrets
 
 # variables
 numPieces = 0
@@ -30,6 +32,9 @@ my_pos = 0
 asym_ciphers = {}
 game_state = {}
 players_public_keys = {}
+players_bit_commitments = {}
+my_bit_commitment = {}
+table_bit_commitment = {}
 
 def main():
     """Main function"""
@@ -79,6 +84,10 @@ def choose(msg):
             dstr_ciphered_stock(msg["from"],msg["content"])
         else:
             dstr_ciphered_stock(None,msg["content"])
+    elif msg["type"] == "createBitCommitment":
+        createBitCommitment(msg["content"])
+    elif msg["type"] == "receiveBitCommitment":
+        receiveBitCommitment(msg["from"],msg["content"])
     elif msg["type"] == "returnCipherStockKeys":
         returnCipherKeys()
     elif msg["type"] == "returnCipherPieceKey":
@@ -200,6 +209,61 @@ def dstr_ciphered_stock(from_p,content):
         }
         send(str(json.dumps(dic))) # when finished send to server with flag ndone = False
 
+def createBitCommitment(content):
+
+    global table_bit_commitment
+    global my_bit_commitment
+
+    table_bit_commitment['r1'] = deserializeBytes(content['r1'])
+    table_bit_commitment['bit_commitment'] = deserializeBytes(content['bit_commitment'])
+
+    r1 = b''
+    r2 = b''
+
+    while r1 == r2:
+        r1 = secrets.token_bytes(32)
+        r2 = secrets.token_bytes(32)
+    
+    my_bit_commitment['r1'] = r1
+    my_bit_commitment['r2'] = r2
+
+    digest = hashes.Hash(hashes.SHA256())
+    digest.update(r1)
+    digest.update(r2)
+    digest.update(bytes(str(ciphered_stock),'utf-8'))
+    bit_commitment = digest.finalize()
+
+    my_bit_commitment['bit_commitment'] = bit_commitment
+    my_bit_commitment['ciphered_hand'] = ciphered_stock.copy()
+
+    b = {
+        "bit_commitment": serializeBytes(bit_commitment),
+        "r1": serializeBytes(r1)
+    }
+    signature = my_asym_cipher.sign(json.dumps(b),my_asym_cipher.private_key)
+    msg = {
+        "bit_commitment" : b,
+        "signature" : serializeBytes(signature)
+    }
+    send(json.dumps(msg))
+
+def receiveBitCommitment(from_p,content):
+
+    b = content['bit_commitment']
+    signature = deserializeBytes(content['signature'])
+    if AsymmetricCipher.validate_signature(signature,json.dumps(b), players_public_keys[from_p]):
+        players_bit_commitments[from_p] = {
+            "r1" : deserializeBytes(b['r1']),
+            "bit_commitment" : deserializeBytes(b['bit_commitment'])
+        }
+        print(players_bit_commitments)
+        send(json.dumps({}))
+    else:
+        msg = {
+            "failedSignatureValidation" : True
+        }
+        send(json.dumps(msg))
+
 def rcv_pseudo_stock(content):
     
     
@@ -301,7 +365,7 @@ def sendPublicKeys(from_p,content):
             tuple_i = random.choice(temp_pseudo_stock)
             temp_pseudo_stock.remove(tuple_i)
             i = tuple_i[0]
-            asym_cipher = AsymmetricCipher(1024)
+            asym_cipher = AsymmetricCipher(2048)
             asym_ciphers[str(i)] = asym_cipher
             keys_dic[str(i)] = serializeBytes(asym_cipher.serializePublicKey())
             print("Put one public key")
@@ -318,7 +382,7 @@ def sendPublicKeyDrawedPiece():
 
     global asym_cipher_drawed_piece
     key_dic = {}
-    asym_cipher_drawed_piece = AsymmetricCipher(1024)
+    asym_cipher_drawed_piece = AsymmetricCipher(2048)
     key_dic[drawed_piece[0]] = serializeBytes(asym_cipher_drawed_piece.serializePublicKey())
     msg = {
         "public_key" : key_dic
@@ -338,9 +402,13 @@ def getAndCheckPieces(content):
             
             for t in pseudo_stock:
                 if t[0] == int(i):
-                    deciphered_piece = SymmetricCipher.s_decipher(t[1],key).decode('utf-8')
-                    if deciphered_piece == t_k['piece']:
-                        stock.append(deciphered_piece)
+                    digest = hashes.Hash(hashes.SHA256())
+                    digest.update(bytes(str(i),'utf-8'))
+                    digest.update(key)
+                    digest.update(bytes(t_k['piece'],'utf-8'))
+                    pseudo_piece = digest.finalize()
+                    if pseudo_piece == t[1]:
+                        stock.append(t_k['piece'])
     
     send(json.dumps({}))
 
@@ -350,9 +418,15 @@ def getAndCheckDrawedPiece(content):
     t_k = json.loads(deciphered.replace("'","\""))
     key = deserializeBytes(t_k['key'])
 
-    deciphered_piece = SymmetricCipher.s_decipher(drawed_piece[1],key).decode('utf-8')
-    if deciphered_piece == t_k['piece']:
-        stock.append(deciphered_piece)
+
+    digest = hashes.Hash(hashes.SHA256())
+    digest.update(bytes(str(drawed_piece[0]),'utf-8'))
+    digest.update(key)
+    digest.update(bytes(t_k['piece'],'utf-8'))
+    pseudo_piece = digest.finalize()
+
+    if pseudo_piece == drawed_piece[1]:
+        stock.append(t_k['piece'])
         send(json.dumps({}))
     else:
         send(json.dumps({"error" : True}))
@@ -585,19 +659,20 @@ def receivePlay(from_p,content):
     if AsymmetricCipher.validate_signature(signature,json.dumps(play), players_public_keys[from_p]):
         if len(game_state) == 0:
             for n,connected in play['piece'].items():
-                if connected == "True":
+                if connected:
                     dic_4gs[n] = True
                 else:
                     dic_4gs[n] = False
         else:
             for n,connected in play['piece'].items():
-                if connected == "True":
+                if connected:
                     dic_4gs[n] = True
                 else:
                     dic_4gs[n] = False
             
             game_state[play["connection"]["play"]][play["connection"]["connected"]] = True
         game_state[play_number] = dic_4gs
+
 
         if "win" in list(play.keys()):
             msg = {

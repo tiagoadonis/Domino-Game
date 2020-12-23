@@ -2,6 +2,7 @@
 """Server for multithreaded application"""
 from symmetric_cipher import *
 from asymmetric_cipher import *
+from cryptography.hazmat.primitives import hashes
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 import json 
@@ -9,6 +10,7 @@ import sys
 import time
 import random
 import base64
+import secrets
 
 
 # Check if game is about o start 
@@ -35,6 +37,7 @@ pseudo_stock = []
 stock_4players = []
 pseudo_stock_keys = {}
 players_public_keys = {}
+my_bit_commitment = {}
 
 
 
@@ -154,22 +157,32 @@ def game():
     time.sleep(.05)
     distributeCiphered()
     time.sleep(.05)
-    print("Pieces on the table: ",stock_4players)
-    msg["content"] = "Stock Distributed!"
-    broadcast(bytes(json.dumps(msg),"utf8"))
+    error = createBitCommitments()
     time.sleep(.05)
-    distributeDecipherKeys()
-    time.sleep(.05)
-    askPublicKeys()
-    time.sleep(.05)
-    sendTilesAndKeys()
-    time.sleep(.05)
+    if not error:
+        print("Pieces on the table: ",stock_4players)
+        msg["content"] = "Stock Distributed!"
+    
+        broadcast(bytes(json.dumps(msg),"utf8"))
+        time.sleep(.05)
+    if not error:
+        distributeDecipherKeys()
+        time.sleep(.05)
+    if not error:
+        askPublicKeys()
+        time.sleep(.05)
+    if not error:
+        sendTilesAndKeys()
+        time.sleep(.05)
     msg["type"] = "doneStock"
     msg["content"] = ""
-    broadcast(bytes(json.dumps(msg),"utf8"))
-    time.sleep(.05)
-    play()
-    print(len(pseudo_stock)," pieces on the table: ",pseudo_stock)
+    if not error:
+        broadcast(bytes(json.dumps(msg),"utf8"))
+        time.sleep(.05)
+    if not error:
+        play()
+    if not error:
+        print(len(pseudo_stock)," pieces on the table: ",pseudo_stock)
 
 def setUpServerClientDH():
 
@@ -248,29 +261,31 @@ def pseudonymizeStock():
     global pseudo_stock
     global pseudo_stock_keys
 
-    l_pwd = []
-    pwd = str(random.randint(1,100))
-    l_pwd.append(pwd)
-    pseudo_cipher = SymmetricCipher(pwd)
+    l_key = []
+    key = secrets.token_bytes(32)
+    l_key.append(key)
     temp = stock.copy()
     i = 0
     while len(temp) != 0:
         random_piece = random.choice(temp)
         temp.remove(random_piece)
-        pseudo_stock.append((i,pseudo_cipher.cipher(random_piece,pseudo_cipher.key)))
+        digest = hashes.Hash(hashes.SHA256())
+        digest.update(bytes(str(i),'utf-8'))
+        digest.update(key)
+        digest.update(bytes(random_piece,'utf-8'))
+        pseudo_piece = digest.finalize()
+        pseudo_stock.append((i,pseudo_piece))
         pseudo_stock_keys[i] = {
             "piece": random_piece,
-            "key" : pseudo_cipher.key
+            "key" : key
         }
 
-        while pwd in l_pwd:
-            pwd = str(random.randint(1,100))
-        
-        l_pwd.append(pwd)
-        pseudo_cipher = SymmetricCipher(pwd)
+        while key in l_key:
+            key = secrets.token_bytes(32)
+
+        l_key.append(key)
 
         i += 1
-
 
 
 def send_stock():
@@ -327,6 +342,66 @@ def distributeCiphered():
     stock_4players = msg["ciphered_stock"].copy()
     pseudo_stock = msg["ciphered_stock"].copy()
 
+def createBitCommitments():
+
+    global my_bit_commitment
+    r1 = b''
+    r2 = b''
+
+    while r1 == r2:
+        r1 = secrets.token_bytes(32)
+        r2 = secrets.token_bytes(32)
+    
+    my_bit_commitment['r1'] = r1
+    my_bit_commitment['r2'] = r2
+
+    digest = hashes.Hash(hashes.SHA256())
+    digest.update(r1)
+    digest.update(r2)
+    digest.update(bytes(str(pseudo_stock),'utf-8'))
+    bit_commitment = digest.finalize()
+
+    my_bit_commitment['bit_commitment'] = bit_commitment
+    my_bit_commitment['ciphered_hand'] = pseudo_stock.copy()
+
+    b = {
+        "r1": serializeBytes(r1),
+        "bit_commitment" : serializeBytes(bit_commitment)
+    }
+
+    msg = {
+        "type": "createBitCommitment",
+        "content": b
+    }
+
+    for player, name in clients.items():
+        player.send(bytes(json.dumps(msg), "utf8"))
+        rcv = json.loads(receive(player))
+
+        
+        for player_to_send,player_to_send_name in clients.items():
+
+            if name != player_to_send_name:
+                msg_tosend = {
+                    "type" : "receiveBitCommitment",
+                    "from" : name,
+                    "content": rcv,
+                }
+            
+                player_to_send.send(bytes(json.dumps(msg_tosend), "utf8"))
+                rcv2 = json.loads(receive(player_to_send))
+                
+                if "failedSignatureValidation" in list(rcv2.keys()):
+                    to_print = player_to_send_name+" failed to verify "+name+"'s signature on bit commitment sharing"
+                    print(to_print)
+                    msg = {
+                        "type": "print",
+                        "content": to_print
+                    }
+                    broadcast(bytes(json.dumps(msg),"utf8"))
+                    return True
+
+    return False
 def distributeDecipherKeys():
     i = len(clients) - 1
     clients_sock = list(clients.keys())
@@ -460,7 +535,6 @@ def sendTilesAndKeys():
 
         pk = AsymmetricCipher.loadPublicKey(deserializeBytes(players_public_keys[i])) #get and load public key
         ciphered = AsymmetricCipher.cipher(str(tk_dic),pk)
-
         tile_keys_dic[players_public_keys[i]] = serializeBytes(ciphered)
     
     msg = {
@@ -564,10 +638,17 @@ def play():
 
                     if "win" not in list(msg_from_p.keys()):
                         no_winner = True
+                    
+                    if "failedSignatureValidation" in list(msg_from_p.keys()):
+                        to_print = player_to_send_name+" failed to verify "+clients[client]+"'s signature from a play"
+                        print(to_print)
+                        msg = {
+                            "type": "print",
+                            "content": to_print
+                        }
+                        broadcast(bytes(json.dumps(msg),"utf8"))
+                        return True 
         
-        print("prev_state: ",prev_state)
-        print("game_state: ",game_state)
-        print(s_nempty,prev_state != game_state,draw,no_winner)
 
 
     msg = {
@@ -582,32 +663,30 @@ def play():
         }
         print("The winner is "+str(clients[winner]))
         broadcast(bytes(json.dumps(msg),"UTF-8"))#send winner to all players
+    return False
 
 def applyPlay(play):
     global game_state 
-    print("Play: ",play)
-    print("Game state: ",game_state)
 
     play_number = len(game_state)
     dic_4gs = {}
     
     if len(game_state) == 0:
         for n,connected in play['piece'].items():
-            if connected == "True":
+            if connected:
                 dic_4gs[n] = True
             else:
                 dic_4gs[n] = False
     else:
         for n,connected in play['piece'].items():
-            if connected == "True":
+            if connected:
                 dic_4gs[n] = True
             else:
                 dic_4gs[n] = False
         
         game_state[str(play["connection"]["play"])][play["connection"]["connected"]] = True
-    game_state[str(play_number)] = dic_4gs
 
-    print(game_state)
+    game_state[str(play_number)] = dic_4gs
 
 def serializeBytes(bit):
     return base64.encodebytes(bit).decode("ascii")
