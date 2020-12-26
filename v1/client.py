@@ -121,7 +121,6 @@ def choose(msg):
 
 def save_players(content):
     #save other players names in order
-    print(content)
     global my_pos
     i = 0 
     for name in content:
@@ -170,8 +169,7 @@ def dstr_ciphered_stock(from_p,content):
         deciphered = players_ciphers[from_p]["symcipher"].decipher(content,players_ciphers[from_p]["symcipher"].key)
         stockS = eval(deciphered)
 
-    arr = [1, 0, 0, 0, 0] # 20% probability of taking a piece
-    prob = random.choice(arr)
+    prob = random.randint(1,20)
     global ciphered_stock
     global numPieces
    
@@ -256,7 +254,6 @@ def receiveBitCommitment(from_p,content):
             "r1" : deserializeBytes(b['r1']),
             "bit_commitment" : deserializeBytes(b['bit_commitment'])
         }
-        print(players_bit_commitments)
         send(json.dumps({}))
     else:
         msg = {
@@ -280,7 +277,7 @@ def rcv_pseudo_stock(content):
 
     for c in content:
         while pwd in l_pwd or ciphered in list(pseudo_stock_keys.keys()):
-            pwd = str(random.randint(1,100))
+            pwd = str(random.randint(1,10000))
             
             sym_cipher = SymmetricCipher(str(pwd))
             if not isinstance(c,bytes):
@@ -354,11 +351,10 @@ def sendPublicKeys(from_p,content):
         deciphered = players_ciphers[from_p]["symcipher"].decipher(content,players_ciphers[from_p]["symcipher"].key)
         keys_dic = json.loads(deciphered.decode('utf-8').replace("'","\""))
 
-    arr = [1, 0, 0, 0, 0] # 20% probability of putting a public key
-    prob = random.choice(arr)
+    prob = random.randint(1,20)
     
-   
-    if len(keys_dic) != (28 - ((len(players)+1)*numPieces)): #while the keys dictionary received isnt the right size repeat
+    
+    if len(keys_dic) != ((len(players)+1)*numPieces): #while the keys dictionary received isnt the right size repeat
         if prob == 1 and len(asym_ciphers) != numPieces: #create keys, send the public and save the private
             
             #key creation and insertion
@@ -813,43 +809,6 @@ def serializePseudoCipherKeys():
     return serialized
 
 
-'''
-def play_card():
-    """play a card"""
-    global nRound
-    table = json.loads(receive())               #receive table
-    nRound += 1                                 #increment round 
-
-    if (len(table) == 0 and nRound == 1):       #firts play of the game 
-        subDeck = []
-        for i in deck:                          #reorganize by naipe
-            if i[1] != 'H':
-                subDeck.append(i)               #subDeck without Hearts
-        card = random.choice(subDeck)           #play random card
-    
-    elif len(table) == 0:                    
-        card = random.choice(deck)
-    
-    else:
-        naipe = table[0][1]                     #naipe to respect
-        subDeck = []
-        for i in deck:                          #reorganize by the naipe to respect
-            if i[1] == naipe:
-                subDeck.append(i)
-        if len(subDeck) == 0:
-            card = random.choice(deck)
-        else:
-            card = random.choice(subDeck)
-    
-    deck.remove(card)                           #remove selected card from deck     
-    send(json.dumps(card))                      #send card
-  
-
-def lost_round():
-    global points
-    points = json.loads(receive())
-    print("Lost round\nPoints: %d\n" % points)
-'''
 
 #----Sockets part----#
 HOST = "127.0.0.1"
