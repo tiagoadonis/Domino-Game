@@ -89,8 +89,6 @@ def handle_client(client):  # Takes client socket as argument.
         }
         #client.send(bytes(welcome, "utf8"))
         client.send(bytes(json.dumps(msg), "utf8"))
-        msg["content"] = "%s has joined the game!\n" % name
-        broadcast(bytes(json.dumps(msg), "utf8"))
         clients[client] = name
         # If 2 <= players <= 4, then start game in 10 sec if no one shows up!
 
@@ -141,8 +139,6 @@ def game():
     time.sleep(.05)
     setUpServerClientDH()
     time.sleep(.05)
-    send_numP()
-    time.sleep(.05)
     pseudonymizeStock()
     time.sleep(.05)
     send_stock()
@@ -154,6 +150,8 @@ def game():
     setUpClientDH()
     time.sleep(.05)
     setUpClientAsymCiphers()
+    time.sleep(.05)
+    send_numP()
     time.sleep(.05)
     distributeCiphered()
     time.sleep(.05)
