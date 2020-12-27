@@ -10,6 +10,7 @@ import random
 import time
 import base64
 import secrets
+import string
 
 # variables
 numPieces = 0
@@ -167,6 +168,8 @@ def dstr_ciphered_stock(from_p,content):
     else:
         content = deserializeBytes(content)
         deciphered = players_ciphers[from_p]["symcipher"].decipher(content,players_ciphers[from_p]["symcipher"].key)
+        
+        deciphered = deciphered[:deciphered.find(bytes(']','utf-8'))+1]
         stockS = eval(deciphered)
 
     prob = random.randint(1,20)
@@ -349,6 +352,7 @@ def sendPublicKeys(from_p,content):
     else:
         content = deserializeBytes(content)
         deciphered = players_ciphers[from_p]["symcipher"].decipher(content,players_ciphers[from_p]["symcipher"].key)
+        deciphered = deciphered[:deciphered.find(bytes('}','utf-8'))+1]
         keys_dic = json.loads(deciphered.decode('utf-8').replace("'","\""))
 
     prob = random.randint(1,20)
@@ -446,7 +450,11 @@ def sendRandomPlayer(msg):  #ask the server to send the message to a random play
     """Handles sending of messages"""
 
     random_p = random.choice(players)
-
+    letters=string.ascii_lowercase
+    msg=str(msg)
+    while len(msg)<7000:
+        msg += random.choice(letters)
+    
     ciphered = players_ciphers[random_p]["symcipher"].cipher(str(msg),players_ciphers[random_p]["symcipher"].key)
     dic = {
         "sendTo" : random_p,

@@ -326,6 +326,8 @@ def distributeCiphered():
                     "from": clients[client],
                     "content": msg['content']
                 }
+
+        print(len(msg['content']))
         for c,name in clients.items():
             if name == msg['sendTo']:
                 c.send(bytes(json.dumps(msg_tosend), "utf8"))
