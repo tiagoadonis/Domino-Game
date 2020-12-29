@@ -689,21 +689,83 @@ def receivePlay(from_p,content):
     send(json.dumps(msg))
 
 def getDoublePiece(n): #get first double piece available with the number n
+    prob = random.randint(1,3) #cheating probability -> 2% MUDAR PARA 50
     for p in stock:
         if p.find(n+"-"+n) != -1:
             stock.remove(p)
             return p
+
+    #cheat operation
+    if (prob == 1 and cheater.lower() == 'y'):
+        print("BATOTA!!!!!!")
+        piece = (n+"-"+n)
+        if (inGameState(piece) == False) :
+            index = random.randint(0, len(stock)-1)
+            stock.pop(index)
+            return piece
+
     return None
 
-def getPiece(n):#get first piece available with the number n
+def getPiece(n): #get first piece available with the number n 
+    prob = random.randint(1,3) #cheating probability -> 2% MUDAR PARA 50
     for p in stock:
         if p.find(n) != -1:
             stock.remove(p)
             return p
+    
+    #cheat operation
+    if (prob == 1 and cheater.lower() == 'y'):
+        print("BATOTA!!!!!!")
+        for i in range(0,7):
+            if int(n) > i:
+                piece = (str(i)+"-"+str(n))
+            else:
+                piece = (str(n)+"-"+str(i))
+            if (inGameState(piece) == False):
+                index = random.randint(0, len(stock)-1)
+                stock.pop(index)
+                return piece
+    
     return None
 
-def setUpClientDH():
+#-------------------------------------------------------------------------------------------------------------------
+# To detect if the piece exists on the game_state
+def inGameState(piece):
+    # print("----------------------------------------------------------------------")
+    pieces = []
+    keysGameState = list(game_state.keys())
+    #print("KEYS GAME STATE: "+str(keysGameState))
+    for key in keysGameState:
+        result = game_state.get(key)    
+        #print("RESULT: "+str(result))
+        if len(list(result.keys())) == 2:
+            #print("RESULT KEYS: "+str(list(result.keys())))
+            lista = list(result.keys())
+            elem1 = (lista.pop(0)).replace('\'', '')
+            elem2 = (lista.pop(0)).replace('\'', '')
+            # print("ELEMENTOS DEPOIS DE TIRADA A PELICA: ("+str(elem1)+", "+str(elem2)+")")
+            # string = str(elem1)+"-"+str(elem2)
+            pieces += [[str(elem1)+"-"+str(elem2)]]
+        else:
+            size = len(list(result.keys()))
+            resultKeys = list(result.keys())
+            elem = resultKeys.pop(size-1)
+            pieces += [[str(elem)+"-"+str(elem)]]
+    # print("PIECE PASSED: "+str(piece))
+    # print("PIECES: "+str(pieces))
 
+    for p in pieces:
+        newP = str(p).replace('\'', '')
+        new2P = newP.replace(']', '')
+        new3P = new2P.replace('[', '')
+        # print("EVERY SINGLE PIECE IN THE PIECES ARRAY: "+str(new3P))
+        if new3P == piece:
+            return True
+
+    return False
+
+#-------------------------------------------------------------------------------------------------------------------
+def setUpClientDH():
     done = True
     for p in players:
         if p not in list(players_DH.keys()) and done:
@@ -816,11 +878,9 @@ def serializePseudoCipherKeys():
     
     return serialized
 
-
-
 #----Sockets part----#
 HOST = "127.0.0.1"
-PORT = 1240
+PORT = 1241
 BUFSIZ = 32768
 ADDR = (HOST, PORT)
 sharedBase = 5
@@ -828,7 +888,18 @@ sharedPrime = 131
 
 client_socket = socket(AF_INET, SOCK_STREAM)
 client_socket.connect(ADDR)
-my_name = sys.argv[1]
+
+if (len(sys.argv) == 3):
+    my_name = sys.argv[1]
+    if ( (sys.argv[2].lower() != "n") and (sys.argv[2].lower() != "y")):
+        print("ERROR!!\nUSAGE: python client.py [username] [Y/N]\n[Y/N] - if the player is a cheater or not")
+        sys.exit()
+    else:
+        cheater = sys.argv[2] #to identify a cheater player
+else:
+    print("ERROR!!\nUSAGE: python client.py [username] [Y/N]\n[Y/N] - if the player is a cheater or not")
+    sys.exit()
+
 send(my_name)
 main_thread = Thread(target=main)
 main_thread.start()
@@ -843,8 +914,5 @@ while 1:
     send(my_msg)
     if my_msg == "{quit}":
         client_socket.close()
-        sys.exit("Connection closed!")
-    
-
-    
+        sys.exit("Connection closed!")  
     

@@ -720,7 +720,7 @@ addresses = {}
 client_DH = {}
 
 HOST = '127.0.0.1'
-PORT = 1240
+PORT = 1241
 BUFSIZ = 32768
 ADDR = (HOST, PORT)
 
