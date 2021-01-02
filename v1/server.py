@@ -38,6 +38,7 @@ stock_4players = []
 pseudo_stock_keys = {}
 players_public_keys = {}
 my_bit_commitment = {}
+players_num_pieces = {}
 
 
 
@@ -327,7 +328,6 @@ def distributeCiphered():
                     "content": msg['content']
                 }
 
-        print(len(msg['content']))
         for c,name in clients.items():
             if name == msg['sendTo']:
                 c.send(bytes(json.dumps(msg_tosend), "utf8"))
@@ -493,7 +493,28 @@ def decipherDrawedPiece(piece,player):
     }
 
     player.send(bytes(json.dumps(msg), "utf8"))
-    receive(player)
+    rcv = json.loads(receive(player))
+    rcv["type"] = "rcvPlayerDraw"
+    rcv["from"] = clients[player]
+    
+    for c,name in clients.items():
+        if c != player:
+            c.send(bytes(json.dumps(rcv),"utf-8"))
+            msg_c = json.loads(receive(c))
+
+            if "failedSignatureValidation" in list(msg_c.keys()):
+                to_print = name+" failed to verify "+clients[player]+"'s signature from a draw warning"
+                print(to_print)
+                msg = {
+                    "type": "print",
+                    "content": to_print
+                }
+                broadcast(bytes(json.dumps(msg),"utf8"))
+                return True 
+            
+            players_num_pieces[player] += 1
+
+    return False
 
 def askPublicKeys():
     global players_public_keys
@@ -545,7 +566,9 @@ def sendTilesAndKeys():
     for c in list(clients.keys()):
         c.send(bytes(json.dumps(msg), "utf8"))
         temp_msg = json.loads(receive(c))
-        
+    
+    for c,name in clients.items():
+        players_num_pieces[c] = num_pieces[str(len(addresses))]
 
 
 def clientRandom(last=None):
@@ -615,17 +638,24 @@ def play():
                 received_draw = json.loads(receive(client)) 
                 piece_taken = received_draw['piece_taken']
                 stock_4players.remove(piece_taken) #update stock with the received after client draw
-                decipherDrawedPiece(piece_taken,client)
-            
+                error = decipherDrawedPiece(piece_taken,client)
+
+                if error:
+                    return True
             #for c2 in list(clients.keys()):
 
 
         if "play" in list(received.keys()):
             applyPlay(received["play"])
-            if "win" in list(received["play"].keys()): #if response had a win warning
+            
+            players_num_pieces[client] -= 1
+            if "win" in list(received["play"].keys()):#if response had a win warning
+                if players_num_pieces[client] == 0: 
 
-                no_winner = False #update no winner to false
-                winner = client   #save the client that won
+                    no_winner = False #update no winner to false
+                    winner = client   #save the client that won
+                else:
+                    print(clients[client]+ " says he has won but I disagree")
 
             for player_to_send,player_to_send_name in clients.items():
                 if player_to_send != client:
@@ -648,9 +678,16 @@ def play():
                         }
                         broadcast(bytes(json.dumps(msg),"utf8"))
                         return True 
+            
+            if "win" in list(received["play"].keys()) and no_winner:
+                to_print = clients[client]+ " says he has won but a player or the table manager disagrees"
+                msg = {
+                    "type": "print",
+                    "content": to_print
+                }
+                broadcast(bytes(json.dumps(msg),"utf8"))
+                return True
         
-
-
     msg = {
         "type": "print",
         "content": "Game ended"

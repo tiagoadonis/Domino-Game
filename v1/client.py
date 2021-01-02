@@ -36,6 +36,7 @@ players_public_keys = {}
 players_bit_commitments = {}
 my_bit_commitment = {}
 table_bit_commitment = {}
+players_num_pieces = {}
 
 def main():
     """Main function"""
@@ -108,7 +109,10 @@ def choose(msg):
         getAndCheckPieces(msg['content'])
     elif msg["type"] == "decipherPseudoDrawPiece":
         getAndCheckDrawedPiece(msg['content'])
+    elif msg["type"] == "rcvPlayerDraw":
+        rcvPlayerDraw(msg['from'],msg['content'],msg['signature'])
     elif msg["type"] == "doneStock":
+        setPlayersNumPieces()
         print("My stock: ",stock)
     elif msg["type"] == "play":
         play()
@@ -172,7 +176,7 @@ def dstr_ciphered_stock(from_p,content):
         deciphered = deciphered[:deciphered.find(bytes(']','utf-8'))+1]
         stockS = eval(deciphered)
 
-    prob = random.randint(1,20)
+    prob =random.randint(1,4) #random.randint(1,20)
     global ciphered_stock
     global numPieces
    
@@ -427,10 +431,29 @@ def getAndCheckDrawedPiece(content):
 
     if pseudo_piece == drawed_piece[1]:
         stock.append(t_k['piece'])
-        send(json.dumps({}))
+        msg = {
+            "content" : "successfulDraw",
+            "signature": serializeBytes(my_asym_cipher.sign("successfulDraw",my_asym_cipher.private_key))
+        }
+        send(json.dumps(msg))
     else:
         send(json.dumps({"error" : True}))
 
+def rcvPlayerDraw(from_p,content,signature):
+
+    global players_num_pieces
+    signature = deserializeBytes(signature)
+
+    if AsymmetricCipher.validate_signature(signature,content,players_public_keys[from_p]):
+        players_num_pieces[from_p] += 1
+        msg = {}
+
+    else:
+
+        msg = {
+                "failedSignatureValidation" : True
+            }
+    send(json.dumps(msg))
 def receive():
     """Handles receiving of messages"""
     return client_socket.recv(BUFSIZ).decode("utf8")
@@ -462,6 +485,14 @@ def sendRandomPlayer(msg):  #ask the server to send the message to a random play
     }
     client_socket.send(bytes(json.dumps(dic), "utf8"))
 
+def setPlayersNumPieces():
+
+    global players_num_pieces
+
+    for p in players:
+        players_num_pieces[p] = numPieces
+    
+    print(players_num_pieces)
     
 def play():
     play = {}
@@ -647,7 +678,7 @@ def draw(rcv_stock):
                 "piece_taken"  : rcv_stock[0]
             }
         print("Drawing a piece from the stock ")
-        send(str(json.dumps(dic)))
+        send(json.dumps(dic))
     else: #if the stock was empty update global variable
         srv_stock_empty = True
 
@@ -658,6 +689,7 @@ def receivePlay(from_p,content):
 
     msg = {}
     global game_state 
+    global players_num_pieces
     play_number = len(game_state)
     dic_4gs = {}
     if AsymmetricCipher.validate_signature(signature,json.dumps(play), players_public_keys[from_p]):
@@ -677,11 +709,17 @@ def receivePlay(from_p,content):
             game_state[play["connection"]["play"]][play["connection"]["connected"]] = True
         game_state[play_number] = dic_4gs
 
+        players_num_pieces[from_p] -= 1
 
         if "win" in list(play.keys()):
-            msg = {
-                "win" : True
-            }
+            if players_num_pieces[from_p] == 0:
+
+                msg = {
+                    "win" : True
+                }
+            else:
+                msg = {}
+                print(from_p+" says he has won but I disagree")
     else:
         msg = {
                 "failedSignatureValidation" : True
