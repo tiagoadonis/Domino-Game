@@ -11,7 +11,7 @@ import time
 import random
 import base64
 import secrets
-
+import ast
 
 # Check if game is about o start 
 check_start = False
@@ -40,8 +40,6 @@ players_public_keys = {}
 my_bit_commitment = {}
 players_num_pieces = {}
 
-
-
 def accept_incoming_connections():
     """Sets up handling for incoming clients"""
 
@@ -64,8 +62,20 @@ def accept_incoming_connections():
             client.send(bytes(json.dumps(msg), "utf8"))
             addresses[client] = client_address
             Thread(target=handle_client, args=(client,)).start()
-        
 
+# Getting clients' addresses
+def getClientsAddresses():
+    keys = list(clients.keys())
+    addresses = []
+    for key in keys:
+        if "raddr" in str(key):
+            addr = str(key).split("raddr=(")
+            newAddr = str(addr[1]).split(")")
+            finalAddr = newAddr[0].replace("\'", "")
+            finalAddr = finalAddr.replace(" ", "")
+            finalAddr = finalAddr.replace(",", ":")                
+            addresses.append(finalAddr)
+    return addresses
 
 def start_game():
     global check_start
@@ -128,7 +138,6 @@ def broadcast(msg, prefix=""):  # prefix is for name identification.
     for sock in clients:
         sock.send(bytes(prefix, "utf8")+msg)
 
-
 def game():
     """Main function of the Game"""
     msg = {
@@ -161,7 +170,6 @@ def game():
     if not error:
         print("Pieces on the table: ",stock_4players)
         msg["content"] = "Stock Distributed!"
-    
         broadcast(bytes(json.dumps(msg),"utf8"))
         time.sleep(.05)
     if not error:
@@ -184,7 +192,6 @@ def game():
         print(len(pseudo_stock)," pieces on the table: ",pseudo_stock)
 
 def setUpServerClientDH():
-
     for c in list(clients.keys()):
         
         secret = random.randint(1,16)
@@ -570,7 +577,6 @@ def sendTilesAndKeys():
     for c,name in clients.items():
         players_num_pieces[c] = num_pieces[str(len(addresses))]
 
-
 def clientRandom(last=None):
     """Returns a random client, excluding last one"""
     b = []
@@ -693,6 +699,39 @@ def play():
         "content": "Game ended"
     }
     broadcast(bytes(json.dumps(msg),"UTF-8")) # send game ended to all players
+
+    for c in clients:
+        ip = getIp(c)
+        msg = {
+            "type": "getting_pieces",
+            "content": "Showing my pieces...",
+            "ip": ip
+        }
+        c.send((bytes(json.dumps(msg),"UTF-8")))
+        a = receive(c)
+        received = json.loads(a)
+        
+        for othersC in clients:
+            if getIp(othersC) != ip:
+                msg = {
+                    "type": "calculating_adv_points",
+                    "stock": ast.literal_eval(received.get("stock")),
+                    "points": received.get("points")
+                }
+                othersC.send((bytes(json.dumps(msg),"UTF-8")))
+                b = receive(othersC)
+                receivedOthers = json.loads(b)
+
+                print("MSG RECEIVED: "+str(receivedOthers))
+                
+                if receivedOthers.get("result") == True:
+                    msg = {
+                        "type": "print",
+                        "content": "Clients' pontuation system is correct"        
+                    }
+                    othersC.send((bytes(json.dumps(msg),"UTF-8")))
+
+
     if not no_winner: #if winner
         msg = {
             "type": "print",
@@ -702,6 +741,11 @@ def play():
         broadcast(bytes(json.dumps(msg),"UTF-8"))#send winner to all players
     return False
 
+def getIp(c):
+    client = str(c).split("raddr=")
+    newClient = client[1].split(">")
+    return newClient[0]
+            
 def applyPlay(play):
     global game_state 
 

@@ -58,8 +58,6 @@ def choose(msg):
         if msg["content"].find("The winner is") != -1:
             if msg["content"].find(my_name)!=-1:
                 print("I won!!!!!!!!!")
-            print("My stock: ", stock)
-            
     elif msg["type"] == "server_DH":
         getServerKeyDH(msg["content"])
     elif msg["type"] == "setUpClientDH":
@@ -120,9 +118,36 @@ def choose(msg):
         receivePlay(msg['from'],msg["content"])
     elif msg["type"] == "draw":
         draw(msg["content"])
-    
+    elif msg["type"] == "getting_pieces":
+        points = gameAccountig(stock)
+        sendPieces(msg["content"], msg["ip"], points)
+    elif msg["type"] == "calculating_adv_points":
+        correct = checkAdvPoints(msg["stock"], msg["points"])
+        sendCheckingResult(correct)
     return True
     
+def sendCheckingResult(flag):
+    msg = {
+        "result": flag
+    }
+    send(json.dumps(msg))
+
+def checkAdvPoints(myStock, points):
+    correct = False
+    checkPoints = gameAccountig(myStock)
+    if (checkPoints == points):
+        correct = True
+    return correct
+
+def sendPieces(printToBeDone, ip, points):
+    print(printToBeDone)
+    msg = {
+        "from": my_name,
+        "stock": str(stock),
+        "points": points,
+        "address": str(ip)
+    }
+    send(json.dumps(msg))
 
 def save_players(content):
     #save other players names in order
@@ -735,7 +760,6 @@ def getDoublePiece(n): #get first double piece available with the number n
 
     #cheat operation
     if (prob == 1 and cheater.lower() == 'y'):
-        print("BATOTA!!!!!!")
         piece = (n+"-"+n)
         if (inGameState(piece) == False) :
             index = random.randint(0, len(stock)-1)
@@ -753,7 +777,6 @@ def getPiece(n): #get first piece available with the number n
     
     #cheat operation
     if (prob == 1 and cheater.lower() == 'y'):
-        print("BATOTA!!!!!!")
         for i in range(0,7):
             if int(n) > i:
                 piece = (str(i)+"-"+str(n))
@@ -766,43 +789,42 @@ def getPiece(n): #get first piece available with the number n
     
     return None
 
-#-------------------------------------------------------------------------------------------------------------------
 # To detect if the piece exists on the game_state
 def inGameState(piece):
-    # print("----------------------------------------------------------------------")
     pieces = []
     keysGameState = list(game_state.keys())
-    #print("KEYS GAME STATE: "+str(keysGameState))
     for key in keysGameState:
         result = game_state.get(key)    
-        #print("RESULT: "+str(result))
         if len(list(result.keys())) == 2:
-            #print("RESULT KEYS: "+str(list(result.keys())))
             lista = list(result.keys())
             elem1 = (lista.pop(0)).replace('\'', '')
             elem2 = (lista.pop(0)).replace('\'', '')
-            # print("ELEMENTOS DEPOIS DE TIRADA A PELICA: ("+str(elem1)+", "+str(elem2)+")")
-            # string = str(elem1)+"-"+str(elem2)
             pieces += [[str(elem1)+"-"+str(elem2)]]
         else:
             size = len(list(result.keys()))
             resultKeys = list(result.keys())
             elem = resultKeys.pop(size-1)
             pieces += [[str(elem)+"-"+str(elem)]]
-    # print("PIECE PASSED: "+str(piece))
-    # print("PIECES: "+str(pieces))
 
     for p in pieces:
         newP = str(p).replace('\'', '')
         new2P = newP.replace(']', '')
         new3P = new2P.replace('[', '')
-        # print("EVERY SINGLE PIECE IN THE PIECES ARRAY: "+str(new3P))
         if new3P == piece:
             return True
 
     return False
 
-#-------------------------------------------------------------------------------------------------------------------
+def gameAccountig(myStock):
+    points = 0
+    if (len(myStock) > 0):
+        for piece in myStock:
+            newPiece = str(piece).split("-")
+            for p in newPiece:
+                points += int(p)
+
+    return points
+
 def setUpClientDH():
     done = True
     for p in players:
