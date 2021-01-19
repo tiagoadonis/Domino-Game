@@ -718,38 +718,76 @@ def receivePlay(from_p,content):
     play_number = len(game_state)
     dic_4gs = {}
     if AsymmetricCipher.validate_signature(signature,json.dumps(play), players_public_keys[from_p]):
-        if len(game_state) == 0:
-            for n,connected in play['piece'].items():
-                if connected:
-                    dic_4gs[n] = True
-                else:
-                    dic_4gs[n] = False
-        else:
-            for n,connected in play['piece'].items():
-                if connected:
-                    dic_4gs[n] = True
-                else:
-                    dic_4gs[n] = False
-            
-            game_state[play["connection"]["play"]][play["connection"]["connected"]] = True
-        game_state[play_number] = dic_4gs
-
-        players_num_pieces[from_p] -= 1
-
-        if "win" in list(play.keys()):
-            if players_num_pieces[from_p] == 0:
-
-                msg = {
-                    "win" : True
-                }
+        if validatePlay(play):
+        
+            if len(game_state) == 0:
+                for n,connected in play['piece'].items():
+                    if connected:
+                        dic_4gs[n] = True
+                    else:
+                        dic_4gs[n] = False
             else:
-                msg = {}
-                print(from_p+" says he has won but I disagree")
+                for n,connected in play['piece'].items():
+                    if connected:
+                        dic_4gs[n] = True
+                    else:
+                        dic_4gs[n] = False
+                
+                game_state[play["connection"]["play"]][play["connection"]["connected"]] = True
+            game_state[play_number] = dic_4gs
+
+            players_num_pieces[from_p] -= 1
+
+            if "win" in list(play.keys()):
+                if players_num_pieces[from_p] == 0:
+
+                    msg = {
+                        "win" : True
+                    }
+                else:
+                    msg = {}
+                    print(from_p+" says he has won but I disagree")
+        else:
+            msg = {
+                "invalidPlay" : True
+            }
     else:
         msg = {
                 "failedSignatureValidation" : True
             }
     send(json.dumps(msg))
+
+def validatePlay(play):
+    
+    piece_json = play['piece'] 
+    
+    piece=""
+    piece_list = [] 
+    for key in piece_json.keys(): 
+        piece_list.append(key) 
+    if len(piece_list)==2:
+        piece = piece_list[0]+"-"+piece_list[1]
+    else:
+        piece = piece_list[4]+"-"+piece_list[4]
+
+    if inGameState(piece):
+        print("Invalid play detected, tried to play a piece that was already played")
+        return False
+    
+    if len(game_state)>0:
+        connection_json = play['connection']
+        
+        play = connection_json['play']
+        connected_to = connection_json['connected']
+        
+        if game_state[play][connected_to]:
+            print("Invalid play detected, tried to attach to a piece that was already used")
+            return False
+    
+    if piece in stock:
+        print("Invalid play detected, tried to play a piece that is in my hand")
+        return False
+    return True
 
 def getDoublePiece(n): #get first double piece available with the number n
     prob = random.randint(1,3) #cheating probability -> 2% MUDAR PARA 50
@@ -761,9 +799,11 @@ def getDoublePiece(n): #get first double piece available with the number n
     #cheat operation
     if (prob == 1 and cheater.lower() == 'y'):
         piece = (n+"-"+n)
-        if (inGameState(piece) == False) :
+        
+        if (inGameState(piece) == False) and (piece not in stock):
             index = random.randint(0, len(stock)-1)
             stock.pop(index)
+            print("I cheated! Shhhhh")
             return piece
 
     return None
@@ -777,14 +817,16 @@ def getPiece(n): #get first piece available with the number n
     
     #cheat operation
     if (prob == 1 and cheater.lower() == 'y'):
+        
         for i in range(0,7):
             if int(n) > i:
                 piece = (str(i)+"-"+str(n))
             else:
                 piece = (str(n)+"-"+str(i))
-            if (inGameState(piece) == False):
+            if (inGameState(piece) == False) and (piece not in stock):
                 index = random.randint(0, len(stock)-1)
                 stock.pop(index)
+                print("I cheated! Shhhhh")
                 return piece
     
     return None

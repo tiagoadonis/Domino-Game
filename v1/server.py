@@ -409,6 +409,7 @@ def createBitCommitments():
                     return True
 
     return False
+
 def distributeDecipherKeys():
     i = len(clients) - 1
     clients_sock = list(clients.keys())
@@ -487,7 +488,7 @@ def decipherDrawedPiece(piece,player):
 
     i = list(dic.keys())[0]
     tk_dic = pseudo_stock_keys[int(i)]
-    
+
     tile_key = serializeBytes(tk_dic['key'])
     tk_dic['key'] = tile_key  #dictionary with the tile and key already serialized
 
@@ -652,6 +653,11 @@ def play():
 
 
         if "play" in list(received.keys()):
+
+            if not validatePlay(received["play"]):
+                print("Invalid play detected! TODO check bit commitment")
+                return True
+
             applyPlay(received["play"])
             
             players_num_pieces[client] -= 1
@@ -678,6 +684,17 @@ def play():
                     if "failedSignatureValidation" in list(msg_from_p.keys()):
                         to_print = player_to_send_name+" failed to verify "+clients[client]+"'s signature from a play"
                         print(to_print)
+                        msg = {
+                            "type": "print",
+                            "content": to_print
+                        }
+                        broadcast(bytes(json.dumps(msg),"utf8"))
+                        return True 
+                    
+                    if "invalidPlay" in list(msg_from_p.keys()):
+                        to_print = player_to_send_name+" detected an invalid play from "+clients[client]+""
+                        print(to_print+"!! TODO check bit commitment")
+                        
                         msg = {
                             "type": "print",
                             "content": to_print
@@ -768,6 +785,78 @@ def applyPlay(play):
         game_state[str(play["connection"]["play"])][play["connection"]["connected"]] = True
 
     game_state[str(play_number)] = dic_4gs
+
+def inGameState(piece):
+    pieces = []
+    keysGameState = list(game_state.keys())
+    for key in keysGameState:
+        result = game_state.get(key)    
+        if len(list(result.keys())) == 2:
+            lista = list(result.keys())
+            elem1 = (lista.pop(0)).replace('\'', '')
+            elem2 = (lista.pop(0)).replace('\'', '')
+            pieces += [[str(elem1)+"-"+str(elem2)]]
+        else:
+            size = len(list(result.keys()))
+            resultKeys = list(result.keys())
+            elem = resultKeys.pop(size-1)
+            pieces += [[str(elem)+"-"+str(elem)]]
+
+    for p in pieces:
+        newP = str(p).replace('\'', '')
+        new2P = newP.replace(']', '')
+        new3P = new2P.replace('[', '')
+        if new3P == piece:
+            return True
+
+    return False
+
+def inPseudoStock(piece):
+
+    piece_n = 0
+    for i in list(pseudo_stock_keys.keys()):
+        json = pseudo_stock_keys[i]
+        if json['piece'] == piece:
+            piece_n = i
+            continue
+    
+    for t in pseudo_stock:
+        if piece_n in t:
+            return True
+    
+    return False
+
+
+def validatePlay(play):
+    
+    piece_json = play['piece'] 
+    
+    piece=""
+    piece_list = [] 
+    for key in piece_json.keys(): 
+        piece_list.append(key) 
+    if len(piece_list)==2:
+        piece = piece_list[0]+"-"+piece_list[1]
+    else:
+        piece = piece_list[4]+"-"+piece_list[4]
+
+    if inGameState(piece):
+        print("Invalid play detected, tried to play a piece that was already played")
+        return False
+    
+    if len(game_state)>0:
+        connection_json = play['connection']
+        
+        play = connection_json['play']
+        connected_to = connection_json['connected']
+        if game_state[str(play)][str(connected_to)]:
+            print("Invalid play detected, tried to attach to a piece that was already used")
+            return False
+    
+    if inPseudoStock(piece):
+        print("Invalid play detected, tried to play a piece that is in the stock")
+        return False
+    return True
 
 def serializeBytes(bit):
     return base64.encodebytes(bit).decode("ascii")
