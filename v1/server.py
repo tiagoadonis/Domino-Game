@@ -205,7 +205,6 @@ def setUpServerClientDH():
         client_DH[c] = (int(receive(c))** secret) % sharedPrime
 
 def setUpClientDH():
-
     for client in list(clients.keys()):
 
         msg_tosend = {
@@ -234,7 +233,6 @@ def setUpClientDH():
         
     
 def setUpClientAsymCiphers():
-
     for client in list(clients.keys()):
         msg ={
             "type": "setUpAsymCipher",
@@ -253,9 +251,7 @@ def setUpClientAsymCiphers():
                     player_to_send.send(bytes(json.dumps(ciphered_msg), "utf8"))
                     receive(player_to_send)
 
-
 def send_numP():
-
     for sock in clients:
         msg = {
             "type":"numPieces",
@@ -385,9 +381,7 @@ def createBitCommitments():
         player.send(bytes(json.dumps(msg), "utf8"))
         rcv = json.loads(receive(player))
 
-        
         for player_to_send,player_to_send_name in clients.items():
-
             if name != player_to_send_name:
                 msg_tosend = {
                     "type" : "receiveBitCommitment",
@@ -717,37 +711,55 @@ def play():
     }
     broadcast(bytes(json.dumps(msg),"UTF-8")) # send game ended to all players
 
-    for c in clients:
-        ip = getIp(c)
+    failedSignatureValidation = False
+    gameAccountingError = False
+    for c1,name1 in clients.items():
         msg = {
             "type": "getting_pieces",
             "content": "Showing my pieces...",
-            "ip": ip
         }
-        c.send((bytes(json.dumps(msg),"UTF-8")))
-        a = receive(c)
+        c1.send((bytes(json.dumps(msg),"UTF-8")))
+        a = receive(c1)
         received = json.loads(a)
         
-        for othersC in clients:
-            if getIp(othersC) != ip:
+        for c2,name2 in clients.items():
+            if name2 != name1:
                 msg = {
                     "type": "calculating_adv_points",
-                    "stock": ast.literal_eval(received.get("stock")),
-                    "points": received.get("points")
+                    "from": received.get("from"),
+                    "elems": received.get("elems"),
+                    "signature": received.get("signature")
                 }
-                othersC.send((bytes(json.dumps(msg),"UTF-8")))
-                b = receive(othersC)
+                c2.send((bytes(json.dumps(msg),"UTF-8")))
+                b = receive(c2)
                 receivedOthers = json.loads(b)
 
-                print("MSG RECEIVED: "+str(receivedOthers))
-                
+                # if the signature validation was correct
                 if receivedOthers.get("result") == True:
                     msg = {
                         "type": "print",
                         "content": "Clients' pontuation system is correct"        
                     }
-                    othersC.send((bytes(json.dumps(msg),"UTF-8")))
+                    c2.send((bytes(json.dumps(msg),"UTF-8")))
+                elif receivedOthers.get("result") == False:
+                    gameAccountingError = True
+                # if the signature validation failed
+                elif receivedOthers.get("failedSignatureValidation") == True:
+                    failedSignatureValidation = True
+                    
+    if (gameAccountingError == True):
+        msg = {
+            "type": "print",
+            "content": "Someone cheated in the game accountig"        
+        }
+        broadcast((bytes(json.dumps(msg),"UTF-8")))
 
+    if (failedSignatureValidation == True):
+        msg = {
+            "type": "print",
+            "content": "Someone has a fake signature"        
+        }
+        broadcast((bytes(json.dumps(msg),"UTF-8")))
 
     if not no_winner: #if winner
         msg = {
@@ -758,11 +770,6 @@ def play():
         broadcast(bytes(json.dumps(msg),"UTF-8"))#send winner to all players
     return False
 
-def getIp(c):
-    client = str(c).split("raddr=")
-    newClient = client[1].split(">")
-    return newClient[0]
-            
 def applyPlay(play):
     global game_state 
 
@@ -877,7 +884,13 @@ def deserializeStock(rcv_stock):
         send_stock.append(serializeBytes(rcv_stock[i]))
             
     return send_stock
-    
+
+# def deserializeStrStock(stock):
+#     send_stock = []
+#     for i in range(len(stock)):
+#         send_stock.append(bytes(stock[i]).decode())
+#     return send_stock
+
 def serializePseudo(rcv_pseudo):
     send_stock = []
     for i in range(len(rcv_pseudo)):

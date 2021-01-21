@@ -119,33 +119,53 @@ def choose(msg):
     elif msg["type"] == "draw":
         draw(msg["content"])
     elif msg["type"] == "getting_pieces":
-        points = gameAccountig(stock)
-        sendPieces(msg["content"], msg["ip"], points)
+        sendPieces(msg["content"], stock)
     elif msg["type"] == "calculating_adv_points":
-        correct = checkAdvPoints(msg["stock"], msg["points"])
-        sendCheckingResult(correct)
+        sendCheckingResult(msg["from"], msg["elems"], msg["signature"])
     return True
+
+def sendCheckingResult(from_p, elems, sign):
+    content = elems 
+    signature = deserializeBytes(sign)
     
-def sendCheckingResult(flag):
-    msg = {
-        "result": flag
-    }
-    send(json.dumps(msg))
+    if AsymmetricCipher.validate_signature(signature, json.dumps(content), players_public_keys[from_p]):
+        flag = False
 
-def checkAdvPoints(myStock, points):
-    correct = False
-    checkPoints = gameAccountig(myStock)
-    if (checkPoints == points):
-        correct = True
-    return correct
+        stock = deserializeStrStock(elems["stock"])
+        points = deserializeBytes(elems["points"])
 
-def sendPieces(printToBeDone, ip, points):
+        splitPoints = str(points).split("\\")
+        points = len(splitPoints) - 1
+        checkPoints = gameAccountig(stock)
+        
+        if (checkPoints == points):
+            flag = True
+
+        msg = {
+            "result": flag
+        }
+        send(json.dumps(msg))
+    # Invalid signature
+    else:
+        msg = {
+            "failedSignatureValidation" : True
+        }
+        send(json.dumps(msg))
+
+def sendPieces(printToBeDone, stock):
+    points = gameAccountig(stock)
     print(printToBeDone)
+
+    elems = {
+        "stock": serializeStrStock(stock),
+        "points": serializeBytes(bytes(points))
+    }
+    signature = my_asym_cipher.sign(json.dumps(elems), my_asym_cipher.private_key)
+
     msg = {
         "from": my_name,
-        "stock": str(stock),
-        "points": points,
-        "address": str(ip)
+        "elems": elems,
+        "signature": serializeBytes(signature)
     }
     send(json.dumps(msg))
 
@@ -959,6 +979,12 @@ def serializeStock(rcv_stock):
 
     return send_stock
 
+def serializeStrStock(stock):
+    send_stock = []
+    for i in range(len(stock)):
+        send_stock.append(serializeBytes(str.encode(stock[i])))
+    return send_stock
+
 def deserializeStock(rcv_stock):
     send_stock = []
     for i in range(len(rcv_stock)):
@@ -966,6 +992,13 @@ def deserializeStock(rcv_stock):
             
     return send_stock
     
+def deserializeStrStock(rcv_stock):
+    send_stock = []
+    for i in range(len(rcv_stock)):
+        newValue = deserializeBytes(rcv_stock[i])
+        send_stock.append(str(newValue).replace('b', '').replace('\'', '').replace('\"', '')) 
+    return send_stock
+
 def deserializePseudo(rcv_pseudo):
     send_stock = []
     for i in range(len(rcv_pseudo)):
