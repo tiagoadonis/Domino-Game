@@ -7,7 +7,6 @@ from cryptography.hazmat.primitives import hashes
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
 from termcolor import colored
-import pickle
 import json 
 import sys
 import time
@@ -677,8 +676,9 @@ def play():
                     no_winner = False #update no winner to false
                     winner = client   #save the client that won
                     global winnerNumber
+                    global winnerClient
+                    winnerClient = clients[client]
                     winnerNumber = c
-                    print(client)
                 else:
                     print(clients[client][0]+ " says he has won but I disagree")
 
@@ -740,6 +740,11 @@ def play():
         c.send((bytes(json.dumps(msg),"UTF-8")))
         a = receive(c)
         received = json.loads(a)
+        print(clients[c][0])
+        print(winnerClient[0])
+        if(clients[c][0] == winnerClient[0]):
+            global winnerPoints
+            winnerPoints = received.get("points")
         
         for othersC in clients:
             if getIp(othersC) != ip:
@@ -755,8 +760,6 @@ def play():
                 print("MSG RECEIVED: "+str(receivedOthers))
                 
                 if receivedOthers.get("result") == True:
-                    global winnerPoints
-                    winnerPoints = receivedOthers.get("points")
                     msg = {
                         "type": "print",
                         "content": "Clients' pontuation system is correct"        
@@ -769,14 +772,11 @@ def play():
             "type": "print",
             "content": "The winner is "+str(clients[winner][0])
         }
-        global winnerClient
-        winnerClient = clients[winner]
         print(colored("The winner is "+str(clients[winner][0]),"yellow"))
         broadcast(bytes(json.dumps(msg),"UTF-8"))#send winner to all players
     return False
 
 def checkIdentityWinner():
-    print(winnerClient)
     msg = json.loads(receive(list(clients.keys())[winnerNumber]))
     sign = msg["sign"]
     res = validationPseudo(winnerClient[0], deserializeBytes(winnerClient[1]), deserializeBytes(sign))
