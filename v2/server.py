@@ -100,7 +100,7 @@ def handle_client(client):  # Takes client socket as argument.
     
     if (client not in clients.keys()) and name!="" and ([name, pubKey] not in clients.values()) or name == "done":
     
-        welcome = 'Welcome %s! If you ever want to quit, type {quit} to exit.' % name
+        welcome = 'Welcome %s!' % name
         msg= {
             "type":"print",
             "content":welcome

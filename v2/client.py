@@ -26,6 +26,7 @@ asym_cipher_drawed_piece = None
 nRound = 0
 points = 0
 my_name= ""
+nameInput = ""
 players= []
 srv_stock_empty = False
 players_DH = {}
@@ -522,7 +523,6 @@ def setPlayersNumPieces():
     for p in players:
         players_num_pieces[p] = numPieces
     
-    print(players_num_pieces)
     
 def play():
     play = {}
@@ -985,7 +985,12 @@ def serializePseudoCipherKeys():
     
     return serialized
 
-def sendPseudo(my_name):    # Send Pseudo & Public Key
+def createPseudo(my_name):
+    digest = hashes.Hash(hashes.SHA256())
+    digest.update(bytes(my_name,'utf-8'))
+    return digest.finalize()
+
+def sendPseudo():    # Send Pseudo & Public Key
     msg = {
         "from": my_name,
         "pubKey": serializeBytes(getPublicKey())
@@ -1012,7 +1017,8 @@ client_socket = socket(AF_INET, SOCK_STREAM)
 client_socket.connect(ADDR)
 
 if (len(sys.argv) == 3):
-    my_name = sys.argv[1]
+    nameInput = sys.argv[1]
+    my_name = serializeBytes(createPseudo(nameInput))
     if ( (sys.argv[2].lower() != "n") and (sys.argv[2].lower() != "y")):
         print("ERROR!!\nUSAGE: python client.py [username] [Y/N]\n[Y/N] - if the player is a cheater or not")
         sys.exit()
@@ -1022,7 +1028,7 @@ else:
     print("ERROR!!\nUSAGE: python client.py [username] [Y/N]\n[Y/N] - if the player is a cheater or not")
     sys.exit()
 
-sendPseudo(my_name)
+sendPseudo()
 main_thread = Thread(target=main)
 main_thread.start()
 
