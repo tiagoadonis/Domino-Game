@@ -410,7 +410,7 @@ def createBitCommitments():
                 
                 if "failedSignatureValidation" in list(rcv2.keys()):
                     to_print = player_to_send_name[0]+" failed to verify "+name[0]+"'s signature on bit commitment sharing"
-                    print(to_print)
+                    print(colored(to_print,"red"))
                     msg = {
                         "type": "print",
                         "content": to_print
@@ -522,7 +522,7 @@ def decipherDrawedPiece(piece,player):
 
             if "failedSignatureValidation" in list(msg_c.keys()):
                 to_print = name[0]+" failed to verify "+clients[player][0]+"'s signature from a draw warning"
-                print(to_print)
+                print(colored(to_print,"red"))
                 msg = {
                     "type": "print",
                     "content": to_print
@@ -683,7 +683,7 @@ def play():
                     winnerClient = clients[client]
                     winnerNumber = c
                 else:
-                    print(clients[client][0]+ " says he has won but I disagree")
+                    print(colored(clients[client][0]+ " says he has won but I disagree"),"red")
 
             for player_to_send,player_to_send_name in clients.items():
                 if player_to_send != client:
@@ -699,7 +699,7 @@ def play():
                     
                     if "failedSignatureValidation" in list(msg_from_p.keys()):
                         to_print = player_to_send_name[0]+" failed to verify "+clients[client][0]+"'s signature from a play"
-                        print(to_print)
+                        print(colored(to_print,"red"))
                         msg = {
                             "type": "print",
                             "content": to_print
