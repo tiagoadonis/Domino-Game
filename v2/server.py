@@ -744,7 +744,6 @@ def play():
         a = receive(c)
         received = json.loads(a)
         print(clients[c][0])
-        print(winnerClient[0])
 
         global winnerPoints
         winnerPoints = winnerPoints + received.get("points")
@@ -757,7 +756,7 @@ def play():
         b = receive(c)
         receivedOthers = json.loads(b)
         for c in receivedOthers.get("content"):
-            if c[0] == winnerClient:
+            if c[0] == winnerClient[0]:
                 if clients[winnerC][2] == 0 or clients[winnerC][2] == c[1]:
                     clients[winnerC][2] = c[1]
                 else:
@@ -810,7 +809,7 @@ def checkIdentityWinner():
         global winnerPoints
         print(colored("Winner's identity confirmed! ","green"))
         winnerPoints = int(5 * round(float(winnerPoints)/5))
-        clients[winnerC][2] =+ winnerPoints
+        clients[winnerC][2] += winnerPoints
         print(colored("Winner got "+ str(clients[winnerC][2]) +" points!","green"))
     else:
         print(colored("Winner's identity not confirmed!","red"))

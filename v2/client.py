@@ -5,6 +5,7 @@ from cc import *
 from cryptography.hazmat.primitives import hashes
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
+from termcolor import colored
 import pickle
 import sys
 import json
@@ -63,7 +64,7 @@ def choose(msg):
         if msg["content"].find("The winner is") != -1:
             if msg["content"].find(my_name)!=-1:
                 sendPseudoSign()
-                print("I won!!!!!!!!!")
+                print(colored("I won!!!!!!!!!","green"))
     elif msg["type"] == "server_DH":
         getServerKeyDH(msg["content"])
     elif msg["type"] == "setUpClientDH":
@@ -149,7 +150,6 @@ def checkAdvPoints(myStock, points):
     return correct
 
 def sendPieces(printToBeDone, ip, points):
-    print(printToBeDone)
     msg = {
         "from": my_name,
         "stock": str(stock),
@@ -741,9 +741,9 @@ def countPoints(from_p, state):
 
 def sendPoints():
     tmp = players
-    print(my_name + " got " + str(my_points) + " points during the round! (ME!)")
+    print(colored(str(my_name) + " got " + str(my_points) + " points during the round! (ME!)","green"))
     for p in players:
-        print(p[0] + " got " + str(p[1]) + " points during the round!")
+        print(colored(str(p[0]) + " got " + str(p[1]) + " points during the round!","yellow"))
     tmp.append([my_name, my_points])
     msg = {
         "from": my_name,
