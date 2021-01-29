@@ -25,6 +25,7 @@ drawed_piece = None
 asym_cipher_drawed_piece = None
 nRound = 0
 points = 0
+my_points = 0
 my_name= ""
 nameInput = ""
 players= []
@@ -126,6 +127,8 @@ def choose(msg):
     elif msg["type"] == "getting_pieces":
         points = gameAccountig(stock)
         sendPieces(msg["content"], msg["ip"], points)
+    elif msg["type"] == "send_game_points":
+        sendPoints()
     elif msg["type"] == "calculating_adv_points":
         correct = checkAdvPoints(msg["stock"], msg["points"])
         sendCheckingResult(correct)
@@ -161,7 +164,7 @@ def save_players(content):
     i = 0 
     for name in content:
         if name != my_name:
-            players.append(name)
+            players.append([name, 0])
         else:
             my_pos = i
         i+=1
@@ -179,12 +182,12 @@ def setUpAsymCipher():
     msg = {}
     for p in players:
         
-        ciphered_play = players_ciphers[p]["symcipher"].cipher(serialized_pk ,players_ciphers[p]["symcipher"].key)
+        ciphered_play = players_ciphers[p[0]]["symcipher"].cipher(serialized_pk ,players_ciphers[p[0]]["symcipher"].key)
         dic = {
             "from": my_name,
             "content": serializeBytes(ciphered_play)
         }
-        msg[p] = dic
+        msg[p[0]] = dic
     send(json.dumps(msg))
 
 def savePlayerPublicKey(from_p,content):
@@ -353,7 +356,7 @@ def decipherStock(from_p,ciphers_keys):
             key = deserializeBytes(serialkey)
             deciphered = SymmetricCipher.s_decipher(ciphered,key)
             ciphered_stock.remove(serialcipher)
-            if (from_p == players[0] and my_pos!=0) or (my_pos == 0 and from_p == my_name):
+            if (from_p == players[0][0] and my_pos!=0) or (my_pos == 0 and from_p == my_name):
                 deciphered = eval(deciphered)
                 pseudo_stock.append(deciphered)
             else:
@@ -370,7 +373,7 @@ def decipherDrawPiece(from_p,cipher_key):
     key = deserializeBytes(cipher_key)
     deciphered = SymmetricCipher.s_decipher(ciphered,key)
 
-    if (from_p == players[0] and my_pos!=0) or (my_pos == 0 and from_p == my_name):
+    if (from_p == players[0][0] and my_pos!=0) or (my_pos == 0 and from_p == my_name):
         drawed_piece = eval(deciphered)
     else:
         drawed_piece = serializeBytes(deciphered)
@@ -503,7 +506,7 @@ def send(my_msg):  # event is passed by binders.
 def sendRandomPlayer(msg):  #ask the server to send the message to a random player choosen by me
     """Handles sending of messages"""
 
-    random_p = random.choice(players)
+    random_p = random.choice(players)[0]
     letters=string.ascii_lowercase
     msg=str(msg)
     while len(msg)<7000:
@@ -521,7 +524,7 @@ def setPlayersNumPieces():
     global players_num_pieces
 
     for p in players:
-        players_num_pieces[p] = numPieces
+        players_num_pieces[p[0]] = numPieces
     
     
 def play():
@@ -685,6 +688,7 @@ def play():
         print("Played: ", "("+piece[0]+"-"+piece[-1]+")","\nMy stock: ",stock)
         sendPlayToAll(play,False)
         #send(json.dumps(game_state))
+    countPoints(my_name,game_state) # Calculate my points during game
 
 def sendPlayToAll(play,win):
     if win:
@@ -711,6 +715,41 @@ def draw(rcv_stock):
         send(json.dumps(dic))
     else: #if the stock was empty update global variable
         srv_stock_empty = True
+
+def countPoints(from_p, state):
+    pnts = 0
+    for n in state:
+        if len(state[n]) == 2:
+            for i in state[n]:
+                if False == state[n][i]:
+                    pnts += int(i)
+        else : 
+            if False in state[n].values():
+                pnts += int(list(state[n])[4])
+    if pnts % 5 == 0:
+        if from_p != my_name:
+            for i in players:
+                if i[0] == from_p:
+                    ind = players.index([from_p, i[1]])
+                    players[ind][1] += pnts
+        else:
+            global my_points
+            my_points += pnts
+    #tmp = players
+    #tmp.append([my_name, my_points])
+    #print(tmp)
+
+def sendPoints():
+    tmp = players
+    print(my_name + " got " + str(my_points) + " points during the round! (ME!)")
+    for p in players:
+        print(p[0] + " got " + str(p[1]) + " points during the round!")
+    tmp.append([my_name, my_points])
+    msg = {
+        "from": my_name,
+        "content": tmp
+    }
+    send(json.dumps(msg))
 
 def receivePlay(from_p,content):
 
@@ -740,7 +779,7 @@ def receivePlay(from_p,content):
                 
                 game_state[play["connection"]["play"]][play["connection"]["connected"]] = True
             game_state[play_number] = dic_4gs
-
+            countPoints(from_p, game_state)       # Conta os pontos durante o jogo (caso soma extremidades sejam multiplas de 5)
             players_num_pieces[from_p] -= 1
 
             if "win" in list(play.keys()):
@@ -875,17 +914,17 @@ def gameAccountig(myStock):
 def setUpClientDH():
     done = True
     for p in players:
-        if p not in list(players_DH.keys()) and done:
+        if p[0] not in list(players_DH.keys()) and done:
             done = False
-            getKeyDH(p)
+            getKeyDH(p[0])
         elif done:
-            if "secret" not in list(players_DH[p].keys()) and done:
+            if "secret" not in list(players_DH[p[0]].keys()) and done:
                 done = False
-                getKeyDH(p)
+                getKeyDH(p[0])
             elif done:
-                if players_DH[p]["secret"] is None and done:
+                if players_DH[p[0]]["secret"] is None and done:
                     done = False
-                    getKeyDH(p)
+                    getKeyDH(p[0])
     if done:
         msg = {
             "done" : True,

@@ -41,6 +41,7 @@ pseudo_stock_keys = {}
 players_public_keys = {}
 my_bit_commitment = {}
 players_num_pieces = {}
+winnerC = None
 winnerClient = None
 winnerNumber = None
 winnerPoints = 0
@@ -107,14 +108,14 @@ def handle_client(client):  # Takes client socket as argument.
         }
         #client.send(bytes(welcome, "utf8"))
         client.send(bytes(json.dumps(msg), "utf8"))
-        clients[client] = [name, pubKey]
+        clients[client] = [name, pubKey, 0]
         # If 2 <= players <= 4, then start game in 10 sec if no one shows up!
 
         if len(addresses) >= 2 and len(addresses) <= 5:
             len1 = len(addresses)
-            msg["content"] = "If no one else appears in the next 20 seconds, the game will begin!"
+            msg["content"] = "If no one else appears in the next 10 seconds, the game will begin!"
             broadcast(bytes(json.dumps(msg), "utf8"))
-            time.sleep(20)
+            time.sleep(10)
             if len(addresses) == len1:
                 check_start = True
     else:
@@ -175,7 +176,7 @@ def game():
     error = createBitCommitments()
     time.sleep(.05)
     if not error:
-        print("Pieces on the table: ",stock_4players)
+        #print("Pieces on the table: ",stock_4players)
         msg["content"] = "Stock Distributed!"
         broadcast(bytes(json.dumps(msg),"utf8"))
         time.sleep(.05)
@@ -197,8 +198,8 @@ def game():
         play()
     if not error:
         checkIdentityWinner()
-    if not error:
-        print(len(pseudo_stock)," pieces on the table: ",pseudo_stock)
+    #if not error:
+        #print(len(pseudo_stock)," pieces on the table: ",pseudo_stock)
 
 def setUpServerClientDH():
     for c in list(clients.keys()):
@@ -677,6 +678,8 @@ def play():
                     winner = client   #save the client that won
                     global winnerNumber
                     global winnerClient
+                    global winnerC
+                    winnerC = client
                     winnerClient = clients[client]
                     winnerNumber = c
                 else:
@@ -742,12 +745,35 @@ def play():
         received = json.loads(a)
         print(clients[c][0])
         print(winnerClient[0])
-        if(clients[c][0] == winnerClient[0]):
-            global winnerPoints
-            winnerPoints = received.get("points")
+
+        global winnerPoints
+        winnerPoints = winnerPoints + received.get("points")
+
+        # ----------------- Points from during game -------------------
+        msg = {
+            "type": "send_game_points"
+        }
+        c.send((bytes(json.dumps(msg),"UTF-8")))
+        b = receive(c)
+        receivedOthers = json.loads(b)
+        for c in receivedOthers.get("content"):
+            if c[0] == winnerClient:
+                if clients[winnerC][2] == 0 or clients[winnerC][2] == c[1]:
+                    clients[winnerC][2] = c[1]
+                else:
+                    msg = {
+                        "type": "print",
+                        "content": "Clients' pontuation system is incorrect!"        
+                    }
+                    c.send((bytes(json.dumps(msg),"UTF-8")))
+                    return True
         
+        # ---------------------------------------------------------------
+
         for othersC in clients:
             if getIp(othersC) != ip:
+                # ----------------- Points at te end --------------------
+
                 msg = {
                     "type": "calculating_adv_points",
                     "stock": ast.literal_eval(received.get("stock")),
@@ -781,8 +807,11 @@ def checkIdentityWinner():
     sign = msg["sign"]
     res = validationPseudo(winnerClient[0], deserializeBytes(winnerClient[1]), deserializeBytes(sign))
     if(res):
+        global winnerPoints
         print(colored("Winner's identity confirmed! ","green"))
-        print(colored("Winner got "+ str(winnerPoints) +" points!","green"))
+        winnerPoints = int(5 * round(float(winnerPoints)/5))
+        clients[winnerC][2] =+ winnerPoints
+        print(colored("Winner got "+ str(clients[winnerC][2]) +" points!","green"))
     else:
         print(colored("Winner's identity not confirmed!","red"))
 
