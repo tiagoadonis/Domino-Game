@@ -14,6 +14,7 @@ import random
 import base64
 import secrets
 import ast
+import os
 
 # Check if game is about o start 
 check_start = False
@@ -200,6 +201,17 @@ def game():
         checkIdentityWinner()
     #if not error:
         #print(len(pseudo_stock)," pieces on the table: ",pseudo_stock)
+    terminate_game()
+    print("Game Terminated!!")
+    os._exit(1)
+
+def terminate_game():
+    for c in list(clients.keys()):
+        msg = {
+            "type" : "terminate_game",
+        }
+        c.send(bytes(json.dumps(msg),"utf-8"))
+        c.close()
 
 def setUpServerClientDH():
     for c in list(clients.keys()):
@@ -664,7 +676,7 @@ def play():
 
         if "play" in list(received.keys()):
 
-            if not validatePlay(received["play"]):
+            if not validatePlay(received["play"], client):
                 print("Invalid play detected! TODO check bit commitment")
                 return True
 
@@ -883,7 +895,7 @@ def inPseudoStock(piece):
     return False
 
 
-def validatePlay(play):
+def validatePlay(play, client):
     
     piece_json = play['piece'] 
     
@@ -898,6 +910,14 @@ def validatePlay(play):
 
     if inGameState(piece):
         print("Invalid play detected, tried to play a piece that was already played")
+        to_print ="The Table Manager detected an invalid play from "+clients[client]+""
+        print(to_print+"!! TODO check bit commitment")
+        
+        msg = {
+            "type": "print",
+            "content": to_print
+        }
+        broadcast(bytes(json.dumps(msg),"utf8"))
         return False
     
     if len(game_state)>0:
@@ -907,10 +927,26 @@ def validatePlay(play):
         connected_to = connection_json['connected']
         if game_state[str(play)][str(connected_to)]:
             print("Invalid play detected, tried to attach to a piece that was already used")
+            to_print ="The Table Manager detected an invalid play from "+clients[client]+""
+            print(to_print+"!! TODO check bit commitment")
+            
+            msg = {
+                "type": "print",
+                "content": to_print
+            }
+            broadcast(bytes(json.dumps(msg),"utf8"))
             return False
     
     if inPseudoStock(piece):
         print("Invalid play detected, tried to play a piece that is in the stock")
+        to_print ="The Table Manager detected an invalid play from "+clients[client]+""
+        print(to_print+"!! TODO check bit commitment")
+        
+        msg = {
+            "type": "print",
+            "content": to_print
+        }
+        broadcast(bytes(json.dumps(msg),"utf8"))
         return False
     return True
 

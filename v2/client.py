@@ -14,6 +14,7 @@ import time
 import base64
 import secrets
 import string
+import os
 
 # variables
 numPieces = 0
@@ -133,6 +134,8 @@ def choose(msg):
     elif msg["type"] == "calculating_adv_points":
         correct = checkAdvPoints(msg["stock"], msg["points"])
         sendCheckingResult(correct)
+    elif msg["type"] == "terminate_game":
+        os._exit(1)
     return True
     
 def sendCheckingResult(flag):
