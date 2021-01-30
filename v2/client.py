@@ -834,7 +834,7 @@ def validatePlay(play):
     return True
 
 def getDoublePiece(n): #get first double piece available with the number n
-    prob = random.randint(1,3) #cheating probability -> 2% MUDAR PARA 50
+    prob = random.randint(1,3) #cheating probability 
     for p in stock:
         if p.find(n+"-"+n) != -1:
             stock.remove(p)
@@ -853,7 +853,7 @@ def getDoublePiece(n): #get first double piece available with the number n
     return None
 
 def getPiece(n): #get first piece available with the number n 
-    prob = random.randint(1,3) #cheating probability -> 2% MUDAR PARA 50
+    prob = random.randint(1,3) #cheating probability
     for p in stock:
         if p.find(n) != -1:
             stock.remove(p)
