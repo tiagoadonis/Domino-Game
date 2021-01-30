@@ -910,7 +910,7 @@ def validatePlay(play, client):
 
     if inGameState(piece):
         print("Invalid play detected, tried to play a piece that was already played")
-        to_print ="The Table Manager detected an invalid play from "+clients[client]+""
+        to_print ="The Table Manager detected an invalid play from "+clients[client][0]+""
         print(to_print+"!! TODO check bit commitment")
         
         msg = {
@@ -927,7 +927,7 @@ def validatePlay(play, client):
         connected_to = connection_json['connected']
         if game_state[str(play)][str(connected_to)]:
             print("Invalid play detected, tried to attach to a piece that was already used")
-            to_print ="The Table Manager detected an invalid play from "+clients[client]+""
+            to_print ="The Table Manager detected an invalid play from "+clients[client][0]+""
             print(to_print+"!! TODO check bit commitment")
             
             msg = {
@@ -939,7 +939,7 @@ def validatePlay(play, client):
     
     if inPseudoStock(piece):
         print("Invalid play detected, tried to play a piece that is in the stock")
-        to_print ="The Table Manager detected an invalid play from "+clients[client]+""
+        to_print ="The Table Manager detected an invalid play from "+clients[client][0]+""
         print(to_print+"!! TODO check bit commitment")
         
         msg = {
