@@ -11,6 +11,7 @@ import time
 import base64
 import secrets
 import string
+import os
 
 # variables
 numPieces = 0
@@ -122,6 +123,8 @@ def choose(msg):
         sendPieces(msg["content"], stock)
     elif msg["type"] == "calculating_adv_points":
         sendCheckingResult(msg["from"], msg["elems"], msg["signature"])
+    elif msg["type"] == "terminate_game":
+        os._exit(1)    
     return True
 
 def sendCheckingResult(from_p, elems, sign):
@@ -537,7 +540,6 @@ def setPlayersNumPieces():
     for p in players:
         players_num_pieces[p] = numPieces
     
-    print(players_num_pieces)
     
 def play():
     play = {}
@@ -547,7 +549,6 @@ def play():
         for k in list(game_state.keys()):
             if not played:
                 piece = game_state[k]
-
                 for n in list(piece.keys()):
                     changed = False
                     if not played:

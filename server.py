@@ -2,9 +2,11 @@
 """Server for multithreaded application"""
 from symmetric_cipher import *
 from asymmetric_cipher import *
+from cc import *
 from cryptography.hazmat.primitives import hashes
 from socket import AF_INET, socket, SOCK_STREAM
 from threading import Thread
+from termcolor import colored
 import json 
 import sys
 import time
@@ -12,6 +14,7 @@ import random
 import base64
 import secrets
 import ast
+import os
 
 # Check if game is about o start 
 check_start = False
@@ -39,6 +42,10 @@ pseudo_stock_keys = {}
 players_public_keys = {}
 my_bit_commitment = {}
 players_num_pieces = {}
+winnerC = None
+winnerClient = None
+winnerNumber = None
+winnerPoints = 0
 
 def accept_incoming_connections():
     """Sets up handling for incoming clients"""
@@ -89,25 +96,27 @@ def handle_client(client):  # Takes client socket as argument.
     """Handles a single client connection"""
 
     global check_start
-    name = receive(client)
+    msg = json.loads(receive(client))
+    name = msg["from"]
+    pubKey = msg["pubKey"]
     
-    if (client not in clients.keys()) and name!="" and (name not in clients.values()) or name == "done":
+    if (client not in clients.keys()) and name!="" and ([name, pubKey] not in clients.values()) or name == "done":
     
-        welcome = 'Welcome %s! If you ever want to quit, type {quit} to exit.' % name
+        welcome = 'Welcome %s!' % name
         msg= {
             "type":"print",
             "content":welcome
         }
         #client.send(bytes(welcome, "utf8"))
         client.send(bytes(json.dumps(msg), "utf8"))
-        clients[client] = name
+        clients[client] = [name, pubKey, 0]
         # If 2 <= players <= 4, then start game in 10 sec if no one shows up!
 
         if len(addresses) >= 2 and len(addresses) <= 5:
             len1 = len(addresses)
-            msg["content"] = "If no one else appears in the next 20 seconds, the game will begin!"
+            msg["content"] = "If no one else appears in the next 10 seconds, the game will begin!"
             broadcast(bytes(json.dumps(msg), "utf8"))
-            time.sleep(3)
+            time.sleep(10)
             if len(addresses) == len1:
                 check_start = True
     else:
@@ -168,7 +177,7 @@ def game():
     error = createBitCommitments()
     time.sleep(.05)
     if not error:
-        print("Pieces on the table: ",stock_4players)
+        #print("Pieces on the table: ",stock_4players)
         msg["content"] = "Stock Distributed!"
         broadcast(bytes(json.dumps(msg),"utf8"))
         time.sleep(.05)
@@ -189,7 +198,20 @@ def game():
     if not error:
         play()
     if not error:
-        print(len(pseudo_stock)," pieces on the table: ",pseudo_stock)
+        checkIdentityWinner()
+    #if not error:
+        #print(len(pseudo_stock)," pieces on the table: ",pseudo_stock)
+    terminate_game()
+    print("Game Terminated!!")
+    os._exit(1)
+
+def terminate_game():
+    for c in list(clients.keys()):
+        msg = {
+            "type" : "terminate_game",
+        }
+        c.send(bytes(json.dumps(msg),"utf-8"))
+        c.close()
 
 def setUpServerClientDH():
     for c in list(clients.keys()):
@@ -205,6 +227,7 @@ def setUpServerClientDH():
         client_DH[c] = (int(receive(c))** secret) % sharedPrime
 
 def setUpClientDH():
+
     for client in list(clients.keys()):
 
         msg_tosend = {
@@ -218,7 +241,7 @@ def setUpClientDH():
             if "sendTo" in list(received.keys()):
                 rcv_name = received["sendTo"]
                 for c,name in clients.items():
-                    if name == rcv_name:
+                    if name[0] == rcv_name:
                         c.send(bytes(json.dumps(received["content"]),"utf-8"))
             client.send(bytes(json.dumps(msg_tosend),"utf-8"))
             received = json.loads(receive(client))
@@ -233,6 +256,7 @@ def setUpClientDH():
         
     
 def setUpClientAsymCiphers():
+
     for client in list(clients.keys()):
         msg ={
             "type": "setUpAsymCipher",
@@ -245,13 +269,15 @@ def setUpClientAsymCiphers():
         for k in list(received.keys()):
             for player_to_send,player_to_send_name in clients.items():
                 name = received[k]
-                if player_to_send_name == k:
+                if player_to_send_name[0] == k:
                     ciphered_msg = received[k]
                     ciphered_msg["type"] = "savePlayerPublicKey"
                     player_to_send.send(bytes(json.dumps(ciphered_msg), "utf8"))
                     receive(player_to_send)
 
+
 def send_numP():
+
     for sock in clients:
         msg = {
             "type":"numPieces",
@@ -327,12 +353,12 @@ def distributeCiphered():
         
         msg_tosend = { 
                     "type":"dstrCipheredStock",
-                    "from": clients[client],
+                    "from": clients[client][0],
                     "content": msg['content']
                 }
 
         for c,name in clients.items():
-            if name == msg['sendTo']:
+            if name[0] == msg['sendTo']:
                 c.send(bytes(json.dumps(msg_tosend), "utf8"))
                 temp_msg = json.loads(receive(c))
                 client = c
@@ -381,11 +407,13 @@ def createBitCommitments():
         player.send(bytes(json.dumps(msg), "utf8"))
         rcv = json.loads(receive(player))
 
+        
         for player_to_send,player_to_send_name in clients.items():
-            if name != player_to_send_name:
+
+            if name[0] != player_to_send_name[0]:
                 msg_tosend = {
                     "type" : "receiveBitCommitment",
-                    "from" : name,
+                    "from" : name[0],
                     "content": rcv,
                 }
             
@@ -393,8 +421,8 @@ def createBitCommitments():
                 rcv2 = json.loads(receive(player_to_send))
                 
                 if "failedSignatureValidation" in list(rcv2.keys()):
-                    to_print = player_to_send_name+" failed to verify "+name+"'s signature on bit commitment sharing"
-                    print(to_print)
+                    to_print = player_to_send_name[0]+" failed to verify "+name[0]+"'s signature on bit commitment sharing"
+                    print(colored(to_print,"red"))
                     msg = {
                         "type": "print",
                         "content": to_print
@@ -434,7 +462,7 @@ def distributeDecipherKeys():
         for c2 in list(clients.keys()):
             decipher_msg = {
                 "type": "decipherStock",
-                "from": clients[c1],
+                "from": clients[c1][0],
                 "content" : temp_msg
             }
             c2.send(bytes(json.dumps(decipher_msg), "utf8"))
@@ -463,7 +491,7 @@ def decipherDrawedPiece(piece,player):
         
         decipher_msg = {
                 "type": "decipherDrawPiece",
-                "from": clients[c1],
+                "from": clients[c1][0],
                 "content" : temp_msg['key']
         }
         player.send(bytes(json.dumps(decipher_msg), "utf8"))
@@ -497,7 +525,7 @@ def decipherDrawedPiece(piece,player):
     player.send(bytes(json.dumps(msg), "utf8"))
     rcv = json.loads(receive(player))
     rcv["type"] = "rcvPlayerDraw"
-    rcv["from"] = clients[player]
+    rcv["from"] = clients[player][0]
     
     for c,name in clients.items():
         if c != player:
@@ -505,8 +533,8 @@ def decipherDrawedPiece(piece,player):
             msg_c = json.loads(receive(c))
 
             if "failedSignatureValidation" in list(msg_c.keys()):
-                to_print = name+" failed to verify "+clients[player]+"'s signature from a draw warning"
-                print(to_print)
+                to_print = name[0]+" failed to verify "+clients[player][0]+"'s signature from a draw warning"
+                print(colored(to_print,"red"))
                 msg = {
                     "type": "print",
                     "content": to_print
@@ -532,11 +560,11 @@ def askPublicKeys():
         
         msg_tosend = { 
                     "type":"insertPublicKeys",
-                    "from": clients[client],
+                    "from": clients[client][0],
                     "content": msg['content']
                 }
         for c,name in clients.items():
-            if name == msg['sendTo']:
+            if name[0] == msg['sendTo']:
                 c.send(bytes(json.dumps(msg_tosend), "utf8"))
                 temp_msg = json.loads(receive(c))
                 client = c
@@ -586,7 +614,7 @@ def clientRandom(last=None):
 def broadcastPlayers():
     players_info = {}
     for c in clients:
-        players_info[clients[c]] = addresses[c]
+        players_info[clients[c][0]] = addresses[c]
     msg = {
         "type": "players_info",
         "content": players_info
@@ -620,7 +648,7 @@ def play():
         msg = {
             "type": "play",
         }
-        
+
         client = list(clients.keys())[c]
         client.send(bytes(json.dumps(msg), "utf8"))#send game-state to current client
         received = json.loads(receive(client))#wait for response
@@ -648,7 +676,7 @@ def play():
 
         if "play" in list(received.keys()):
 
-            if not validatePlay(received["play"]):
+            if not validatePlay(received["play"], client):
                 print("Invalid play detected! TODO check bit commitment")
                 return True
 
@@ -660,15 +688,21 @@ def play():
 
                     no_winner = False #update no winner to false
                     winner = client   #save the client that won
+                    global winnerNumber
+                    global winnerClient
+                    global winnerC
+                    winnerC = client
+                    winnerClient = clients[client]
+                    winnerNumber = c
                 else:
-                    print(clients[client]+ " says he has won but I disagree")
+                    print(colored(clients[client][0]+ " says he has won but I disagree"),"red")
 
             for player_to_send,player_to_send_name in clients.items():
                 if player_to_send != client:
                     signed_play = {}
                     signed_play["content"] = received.copy()
                     signed_play["type"] = "rcvPlay"
-                    signed_play["from"] = clients[client]
+                    signed_play["from"] = clients[client][0]
                     player_to_send.send(bytes(json.dumps(signed_play), "utf8"))
                     msg_from_p = json.loads(receive(player_to_send))
 
@@ -676,8 +710,8 @@ def play():
                         no_winner = True
                     
                     if "failedSignatureValidation" in list(msg_from_p.keys()):
-                        to_print = player_to_send_name+" failed to verify "+clients[client]+"'s signature from a play"
-                        print(to_print)
+                        to_print = player_to_send_name[0]+" failed to verify "+clients[client][0]+"'s signature from a play"
+                        print(colored(to_print,"red"))
                         msg = {
                             "type": "print",
                             "content": to_print
@@ -686,7 +720,7 @@ def play():
                         return True 
                     
                     if "invalidPlay" in list(msg_from_p.keys()):
-                        to_print = player_to_send_name+" detected an invalid play from "+clients[client]+""
+                        to_print = player_to_send_name[0]+" detected an invalid play from "+clients[client][0]+""
                         print(to_print+"!! TODO check bit commitment")
                         
                         msg = {
@@ -697,7 +731,7 @@ def play():
                         return True 
             
             if "win" in list(received["play"].keys()) and no_winner:
-                to_print = clients[client]+ " says he has won but a player or the table manager disagrees"
+                to_print = clients[client][0]+ " says he has won but a player or the table manager disagrees"
                 msg = {
                     "type": "print",
                     "content": to_print
@@ -711,65 +745,92 @@ def play():
     }
     broadcast(bytes(json.dumps(msg),"UTF-8")) # send game ended to all players
 
-    failedSignatureValidation = False
-    gameAccountingError = False
-    for c1,name1 in clients.items():
+    for c in clients:
+        ip = getIp(c)
         msg = {
             "type": "getting_pieces",
             "content": "Showing my pieces...",
+            "ip": ip
         }
-        c1.send((bytes(json.dumps(msg),"UTF-8")))
-        a = receive(c1)
+        c.send((bytes(json.dumps(msg),"UTF-8")))
+        a = receive(c)
         received = json.loads(a)
+        print(clients[c][0])
+
+        global winnerPoints
+        winnerPoints = winnerPoints + received.get("points")
+
+        # ----------------- Points from during game -------------------
+        msg = {
+            "type": "send_game_points"
+        }
+        c.send((bytes(json.dumps(msg),"UTF-8")))
+        b = receive(c)
+        receivedOthers = json.loads(b)
+        for c in receivedOthers.get("content"):
+            if c[0] == winnerClient[0]:
+                if clients[winnerC][2] == 0 or clients[winnerC][2] == c[1]:
+                    clients[winnerC][2] = c[1]
+                else:
+                    msg = {
+                        "type": "print",
+                        "content": "Clients' pontuation system is incorrect!"        
+                    }
+                    c.send((bytes(json.dumps(msg),"UTF-8")))
+                    return True
         
-        for c2,name2 in clients.items():
-            if name2 != name1:
+        # ---------------------------------------------------------------
+
+        for othersC in clients:
+            if getIp(othersC) != ip:
+                # ----------------- Points at te end --------------------
+
                 msg = {
                     "type": "calculating_adv_points",
-                    "from": received.get("from"),
-                    "elems": received.get("elems"),
-                    "signature": received.get("signature")
+                    "stock": ast.literal_eval(received.get("stock")),
+                    "points": received.get("points")
                 }
-                c2.send((bytes(json.dumps(msg),"UTF-8")))
-                b = receive(c2)
+                othersC.send((bytes(json.dumps(msg),"UTF-8")))
+                b = receive(othersC)
                 receivedOthers = json.loads(b)
 
-                # if the signature validation was correct
+                print("MSG RECEIVED: "+str(receivedOthers))
+                
                 if receivedOthers.get("result") == True:
                     msg = {
                         "type": "print",
                         "content": "Clients' pontuation system is correct"        
                     }
-                    c2.send((bytes(json.dumps(msg),"UTF-8")))
-                elif receivedOthers.get("result") == False:
-                    gameAccountingError = True
-                # if the signature validation failed
-                elif receivedOthers.get("failedSignatureValidation") == True:
-                    failedSignatureValidation = True
-                    
-    if (gameAccountingError == True):
-        msg = {
-            "type": "print",
-            "content": "Someone cheated in the game accountig"        
-        }
-        broadcast((bytes(json.dumps(msg),"UTF-8")))
+                    othersC.send((bytes(json.dumps(msg),"UTF-8")))
 
-    if (failedSignatureValidation == True):
-        msg = {
-            "type": "print",
-            "content": "Someone has a fake signature"        
-        }
-        broadcast((bytes(json.dumps(msg),"UTF-8")))
 
     if not no_winner: #if winner
         msg = {
             "type": "print",
-            "content": "The winner is "+str(clients[winner])
+            "content": "The winner is "+str(clients[winner][0])
         }
-        print("The winner is "+str(clients[winner]))
+        print(colored("The winner is "+str(clients[winner][0]),"yellow"))
         broadcast(bytes(json.dumps(msg),"UTF-8"))#send winner to all players
     return False
 
+def checkIdentityWinner():
+    msg = json.loads(receive(list(clients.keys())[winnerNumber]))
+    sign = msg["sign"]
+    res = validationPseudo(winnerClient[0], deserializeBytes(winnerClient[1]), deserializeBytes(sign))
+    if(res):
+        global winnerPoints
+        print(colored("Winner's identity confirmed! ","green"))
+        winnerPoints = int(5 * round(float(winnerPoints)/5))
+        clients[winnerC][2] += winnerPoints
+        print(colored("Winner got "+ str(clients[winnerC][2]) +" points!","green"))
+    else:
+        print(colored("Winner's identity not confirmed!","red"))
+
+def getIp(c):
+    client = str(c).split("raddr=")
+    newClient = client[1].split(">")
+    return newClient[0]
+            
 def applyPlay(play):
     global game_state 
 
@@ -834,7 +895,7 @@ def inPseudoStock(piece):
     return False
 
 
-def validatePlay(play):
+def validatePlay(play, client):
     
     piece_json = play['piece'] 
     
@@ -849,6 +910,14 @@ def validatePlay(play):
 
     if inGameState(piece):
         print("Invalid play detected, tried to play a piece that was already played")
+        to_print ="The Table Manager detected an invalid play from "+clients[client][0]+""
+        print(to_print+"!! TODO check bit commitment")
+        
+        msg = {
+            "type": "print",
+            "content": to_print
+        }
+        broadcast(bytes(json.dumps(msg),"utf8"))
         return False
     
     if len(game_state)>0:
@@ -858,10 +927,26 @@ def validatePlay(play):
         connected_to = connection_json['connected']
         if game_state[str(play)][str(connected_to)]:
             print("Invalid play detected, tried to attach to a piece that was already used")
+            to_print ="The Table Manager detected an invalid play from "+clients[client][0]+""
+            print(to_print+"!! TODO check bit commitment")
+            
+            msg = {
+                "type": "print",
+                "content": to_print
+            }
+            broadcast(bytes(json.dumps(msg),"utf8"))
             return False
     
     if inPseudoStock(piece):
         print("Invalid play detected, tried to play a piece that is in the stock")
+        to_print ="The Table Manager detected an invalid play from "+clients[client][0]+""
+        print(to_print+"!! TODO check bit commitment")
+        
+        msg = {
+            "type": "print",
+            "content": to_print
+        }
+        broadcast(bytes(json.dumps(msg),"utf8"))
         return False
     return True
 
@@ -884,13 +969,7 @@ def deserializeStock(rcv_stock):
         send_stock.append(serializeBytes(rcv_stock[i]))
             
     return send_stock
-
-# def deserializeStrStock(stock):
-#     send_stock = []
-#     for i in range(len(stock)):
-#         send_stock.append(bytes(stock[i]).decode())
-#     return send_stock
-
+    
 def serializePseudo(rcv_pseudo):
     send_stock = []
     for i in range(len(rcv_pseudo)):
