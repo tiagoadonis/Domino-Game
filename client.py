@@ -213,7 +213,7 @@ def dstr_ciphered_stock(from_p,content):
         deciphered = deciphered[:deciphered.find(bytes(']','utf-8'))+1]
         stockS = eval(deciphered)
 
-    prob =random.randint(1,4) #random.randint(1,20)
+    prob =random.randint(1,20) #random.randint(1,20)
     global ciphered_stock
     global numPieces
    
