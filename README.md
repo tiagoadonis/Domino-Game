@@ -19,10 +19,3 @@
     - python3 server.py
 3. Clients (Players) - Run at least 2 instances of client for the game to start!
     - python3 client.py [username] [Y/N]  -- ([Y/N] if the player is a cheater or not)
-
-## Authors 
-
-89179 - Bruno Lopes
-80214 - Duarte Dias
-89241 - Francisco Petronilho
-88896 - Tiago Dias
